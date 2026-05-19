@@ -64,9 +64,9 @@ def _score(texts: list[str]) -> list[float]:
 # GDELT helpers
 # ---------------------------------------------------------------------------
 
-def _gdelt_chunk(query: str, start: datetime, end: datetime) -> pd.DataFrame:
+def _gdelt_chunk(query: str, start: datetime, end: datetime, retries: int = 3) -> pd.DataFrame:
     """
-    Fetch one chunk of GDELT timeline tone data.
+    Fetch one chunk of GDELT timeline tone data with exponential backoff.
     Returns a DataFrame with columns [date, sentiment_mean, sentiment_count].
     """
     params = {
@@ -76,12 +76,19 @@ def _gdelt_chunk(query: str, start: datetime, end: datetime) -> pd.DataFrame:
         "ENDDATETIME": end.strftime("%Y%m%d%H%M%S"),
         "format": "json",
     }
-    try:
-        resp = requests.get(_GDELT_BASE, params=params, timeout=30)
-        resp.raise_for_status()
-    except requests.RequestException as exc:
-        log.warning("GDELT request failed: %s", exc)
-        return pd.DataFrame(columns=["date", "sentiment_mean", "sentiment_count"])
+    for attempt in range(retries):
+        try:
+            resp = requests.get(_GDELT_BASE, params=params, timeout=30)
+            resp.raise_for_status()
+            break
+        except requests.RequestException as exc:
+            wait = 5 * (2 ** attempt)
+            if attempt < retries - 1:
+                log.debug("GDELT retry %d/%d after %ds: %s", attempt + 1, retries, wait, exc)
+                time.sleep(wait)
+            else:
+                log.warning("GDELT request failed: %s", exc)
+                return pd.DataFrame(columns=["date", "sentiment_mean", "sentiment_count"])
 
     try:
         data = resp.json()
@@ -167,8 +174,10 @@ def fetch_news_sentiment(
 
 
 def fetch_all_sentiment(symbols: list[str]) -> dict[str, pd.DataFrame]:
-    """Fetch GDELT sentiment for all symbols. No rate limiting needed (public API)."""
+    """Fetch GDELT sentiment for all symbols."""
     results = {}
-    for sym in symbols:
+    for i, sym in enumerate(symbols):
         results[sym] = fetch_news_sentiment(sym)
+        if i < len(symbols) - 1:
+            time.sleep(3)  # pause between symbols to avoid sustained rate limiting
     return results
