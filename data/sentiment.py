@@ -78,11 +78,11 @@ def _gdelt_chunk(query: str, start: datetime, end: datetime, retries: int = 3) -
     }
     for attempt in range(retries):
         try:
-            resp = requests.get(_GDELT_BASE, params=params, timeout=30)
+            resp = requests.get(_GDELT_BASE, params=params, timeout=15)
             resp.raise_for_status()
             break
         except requests.RequestException as exc:
-            wait = 5 * (2 ** attempt)
+            wait = 2 * (2 ** attempt)  # 2s, 4s, 8s
             if attempt < retries - 1:
                 log.debug("GDELT retry %d/%d after %ds: %s", attempt + 1, retries, wait, exc)
                 time.sleep(wait)
