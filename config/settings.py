@@ -50,6 +50,12 @@ TRAIN_SPLIT = 0.7
 VAL_SPLIT = 0.15
 # test = remaining 0.15
 
+# Watchlist file path (overrides WATCHLIST when present)
+WATCHLIST_PATH = ROOT / "watchlist.json"
+
+# Model — TFT learning rate
+TFT_LEARNING_RATE = 3e-4
+
 # Signal thresholds
 BUY_THRESHOLD = 0.6        # ensemble confidence to trigger buy
 SELL_THRESHOLD = 0.4       # below this triggers sell

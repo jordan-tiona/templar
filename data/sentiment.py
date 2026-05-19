@@ -1,17 +1,40 @@
-"""News sentiment scoring via Alpha Vantage + FinBERT."""
+"""News sentiment scoring via GDELT DOC 2.0 timeline API + FinBERT (kept for future use)."""
 
-import os
-import time
-import requests
-import pandas as pd
-from transformers import pipeline
+import logging
+from datetime import datetime, timedelta
 from functools import lru_cache
 
-from config.settings import ALPHA_VANTAGE_API_KEY, DATA_CACHE
+import pandas as pd
+import requests
+from transformers import pipeline
 
-_AV_BASE = "https://www.alphavantage.co/query"
-_TOPICS = "financial_markets,finance,earnings"
+from config.settings import DATA_CACHE
 
+log = logging.getLogger(__name__)
+
+_GDELT_BASE = "https://api.gdeltproject.org/api/v2/doc/doc"
+
+# Ticker → company name for GDELT queries
+_COMPANY_NAMES: dict[str, str] = {
+    "AAPL": "Apple",
+    "MSFT": "Microsoft",
+    "GOOGL": "Google",
+    "AMZN": "Amazon",
+    "META": "Meta",
+    "JPM": "JPMorgan",
+    "BAC": "Bank of America",
+    "GS": "Goldman Sachs",
+    "XOM": "ExxonMobil",
+    "CVX": "Chevron",
+    "JNJ": "Johnson Johnson",
+    "UNH": "UnitedHealth",
+    "SPY": "S&P 500",
+}
+
+
+# ---------------------------------------------------------------------------
+# FinBERT helpers — kept for potential future use, not called by GDELT path
+# ---------------------------------------------------------------------------
 
 @lru_cache(maxsize=1)
 def _finbert():
@@ -36,57 +59,114 @@ def _score(texts: list[str]) -> list[float]:
     return scores
 
 
+# ---------------------------------------------------------------------------
+# GDELT helpers
+# ---------------------------------------------------------------------------
+
+def _gdelt_chunk(query: str, start: datetime, end: datetime) -> pd.DataFrame:
+    """
+    Fetch one chunk of GDELT timeline tone data.
+    Returns a DataFrame with columns [date, sentiment_mean, sentiment_count].
+    """
+    params = {
+        "query": query,
+        "mode": "timelinetone",
+        "STARTDATETIME": start.strftime("%Y%m%d%H%M%S"),
+        "ENDDATETIME": end.strftime("%Y%m%d%H%M%S"),
+        "format": "json",
+    }
+    try:
+        resp = requests.get(_GDELT_BASE, params=params, timeout=30)
+        resp.raise_for_status()
+    except requests.RequestException as exc:
+        log.warning("GDELT request failed: %s", exc)
+        return pd.DataFrame(columns=["date", "sentiment_mean", "sentiment_count"])
+
+    try:
+        data = resp.json()
+    except ValueError as exc:
+        log.warning("GDELT JSON parse error: %s", exc)
+        return pd.DataFrame(columns=["date", "sentiment_mean", "sentiment_count"])
+
+    timeline = data.get("timeline", [])
+    if not timeline:
+        return pd.DataFrame(columns=["date", "sentiment_mean", "sentiment_count"])
+
+    # Each item in timeline has a "series" key with a list of {date, value} dicts.
+    # Flatten all series entries.
+    rows = []
+    for series_item in timeline:
+        for point in series_item.get("data", []):
+            raw_date = point.get("date", "")
+            value = point.get("value")
+            if value is None:
+                continue
+            # date format: "YYYYMMDDTHHMMSS"
+            try:
+                dt = datetime.strptime(raw_date[:8], "%Y%m%d").date()
+            except ValueError:
+                continue
+            rows.append({"date": dt, "sentiment_mean": float(value) / 100.0, "sentiment_count": 1})
+
+    if not rows:
+        return pd.DataFrame(columns=["date", "sentiment_mean", "sentiment_count"])
+
+    return pd.DataFrame(rows)
+
+
 def fetch_news_sentiment(
     symbol: str,
-    limit: int = 200,
     force_refresh: bool = False,
 ) -> pd.DataFrame:
     """
     Return a DataFrame indexed by date with columns [sentiment_mean, sentiment_count].
-    Pulls from Alpha Vantage NEWS_SENTIMENT, scores with FinBERT, caches to disk.
+    Pulls 5 years of history from GDELT DOC 2.0 in 6-month chunks, caches to disk.
     """
     cache_path = DATA_CACHE / f"sentiment_{symbol}.parquet"
     if not force_refresh and cache_path.exists():
         return pd.read_parquet(cache_path)
 
-    if not ALPHA_VANTAGE_API_KEY:
+    company = _COMPANY_NAMES.get(symbol, symbol)
+    query = f'"{company} stock"'
+
+    end = datetime.utcnow()
+    start_total = end - timedelta(days=5 * 365)
+
+    chunk_size = timedelta(days=180)
+    all_chunks: list[pd.DataFrame] = []
+
+    chunk_start = start_total
+    while chunk_start < end:
+        chunk_end = min(chunk_start + chunk_size, end)
+        log.debug("GDELT fetch %s: %s → %s", symbol, chunk_start.date(), chunk_end.date())
+        chunk_df = _gdelt_chunk(query, chunk_start, chunk_end)
+        if not chunk_df.empty:
+            all_chunks.append(chunk_df)
+        chunk_start = chunk_end
+
+    if not all_chunks:
+        log.warning("No GDELT data returned for %s", symbol)
         return pd.DataFrame(columns=["sentiment_mean", "sentiment_count"])
 
-    params = {
-        "function": "NEWS_SENTIMENT",
-        "tickers": symbol,
-        "topics": _TOPICS,
-        "limit": limit,
-        "apikey": ALPHA_VANTAGE_API_KEY,
-    }
-    resp = requests.get(_AV_BASE, params=params, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
+    combined = pd.concat(all_chunks, ignore_index=True)
+    combined["date"] = pd.to_datetime(combined["date"])
 
-    feed = data.get("feed", [])
-    if not feed:
-        return pd.DataFrame(columns=["sentiment_mean", "sentiment_count"])
-
-    texts = [item.get("title", "") + " " + item.get("summary", "") for item in feed]
-    dates = [item["time_published"][:8] for item in feed]  # YYYYMMDD
-
-    scores = _score(texts)
-
-    df = pd.DataFrame({"date": dates, "score": scores})
-    df["date"] = pd.to_datetime(df["date"], format="%Y%m%d")
-    daily = df.groupby("date")["score"].agg(
-        sentiment_mean="mean",
-        sentiment_count="count",
+    # Aggregate by date (multiple chunks can overlap at boundaries)
+    daily = combined.groupby("date").agg(
+        sentiment_mean=("sentiment_mean", "mean"),
+        sentiment_count=("sentiment_count", "sum"),
     )
+    daily.index.name = "date"
+    daily.sort_index(inplace=True)
+
     daily.to_parquet(cache_path)
+    log.info("GDELT sentiment for %s: %d days cached", symbol, len(daily))
     return daily
 
 
-def fetch_all_sentiment(symbols: list[str], delay: float = 12.0) -> dict[str, pd.DataFrame]:
-    """Fetch sentiment for all symbols. Throttles to respect AV free-tier rate limits."""
+def fetch_all_sentiment(symbols: list[str]) -> dict[str, pd.DataFrame]:
+    """Fetch GDELT sentiment for all symbols. No rate limiting needed (public API)."""
     results = {}
-    for i, sym in enumerate(symbols):
+    for sym in symbols:
         results[sym] = fetch_news_sentiment(sym)
-        if i < len(symbols) - 1:
-            time.sleep(delay)  # AV free tier: 5 req/min
     return results

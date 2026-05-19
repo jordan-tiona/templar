@@ -20,6 +20,13 @@ praw                   # Reddit API
 
 pyarrow
 
+# Hyperparameter tuning
+optuna
+
+# Screener / web scraping
+lxml                   # required by pd.read_html for Wikipedia
+gdeltdoc               # GDELT Python client (future use)
+
 # Utilities
 python-dotenv
 requests
