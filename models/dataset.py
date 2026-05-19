@@ -57,7 +57,7 @@ def prepare_combined(
         ]
         frames.append(df[cols])
 
-    return pd.concat(frames, ignore_index=False)
+    return pd.concat(frames, ignore_index=True)
 
 
 def train_val_test_split(
@@ -79,9 +79,9 @@ def train_val_test_split(
         test["split"] = "test"
         splits.extend([train, val, test])
 
-    full = pd.concat(splits)
+    full = pd.concat(splits, ignore_index=True)
     return (
-        full[full["split"] == "train"].drop(columns="split"),
-        full[full["split"] == "val"].drop(columns="split"),
-        full[full["split"] == "test"].drop(columns="split"),
+        full[full["split"] == "train"].drop(columns="split").reset_index(drop=True),
+        full[full["split"] == "val"].drop(columns="split").reset_index(drop=True),
+        full[full["split"] == "test"].drop(columns="split").reset_index(drop=True),
     )
