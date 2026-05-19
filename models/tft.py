@@ -75,8 +75,9 @@ def _make_timeseries_dataset(
 
 
 def _latest_checkpoint() -> str | None:
-    checkpoints = sorted(MODEL_TFT.glob("*.ckpt"))
-    return str(checkpoints[-1]) if checkpoints else None
+    # Prefer best checkpoint over last.ckpt
+    best = [c for c in MODEL_TFT.glob("*.ckpt") if c.name != "last.ckpt"]
+    return str(sorted(best)[-1]) if best else None
 
 
 def train(
@@ -154,7 +155,21 @@ def load(checkpoint_path: str | None = None) -> TemporalFusionTransformer:
             raise FileNotFoundError(f"No TFT checkpoint found in {MODEL_TFT}")
         checkpoint_path = checkpoints[-1]
 
-    return TemporalFusionTransformer.load_from_checkpoint(str(checkpoint_path))
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # map_location remaps all tensors to the target device, but torchmetrics
+    # caches its own device reference independently and fires cuda_init when
+    # .to() is called on a CPU-only host with a GPU-saved checkpoint.
+    # Fix: load to CPU, patch metric device refs, then move if needed.
+    raw = torch.load(str(checkpoint_path), map_location="cpu", weights_only=False)
+    raw["hyper_parameters"].pop("dataset_parameters", None)
+    model = TemporalFusionTransformer(**raw["hyper_parameters"])
+    model.load_state_dict(raw["state_dict"])
+    # Reset torchmetrics device cache so .to(device) doesn't trigger cuda_init
+    from torchmetrics import Metric
+    for module in model.modules():
+        if isinstance(module, Metric):
+            module._device = torch.device("cpu")
+    return model.to(device)
 
 
 def predict(model: TemporalFusionTransformer, df: pd.DataFrame, train_df: pd.DataFrame) -> pd.Series:
@@ -166,9 +181,13 @@ def predict(model: TemporalFusionTransformer, df: pd.DataFrame, train_df: pd.Dat
     pred_ds = _make_timeseries_dataset(df, reference_dataset=train_ds, predict=True)
     loader = pred_ds.to_dataloader(train=False, batch_size=128, num_workers=0)
 
-    raw_predictions, index = model.predict(loader, mode="prediction", return_index=True)
-    # QuantileLoss returns multiple quantiles; take the median (index 3 of 7 default quantiles)
-    median_idx = len(model.loss.quantiles) // 2
+    result = model.predict(loader, mode="prediction", return_index=True)
+    # pytorch-forecasting 1.7 returns a Prediction namedtuple:
+    # [0] = predictions tensor (n_samples, n_quantiles)
+    # [2] = index DataFrame
+    raw_predictions = result[0]
+    index = result[2]
+    median_idx = raw_predictions.shape[1] // 2
     preds = raw_predictions[:, median_idx].numpy()
 
     return pd.Series(preds, index=index.index, name="tft_pred")

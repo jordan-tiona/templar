@@ -14,7 +14,7 @@ log = logging.getLogger(__name__)
 
 def generate_signals(
     symbols: list[str] | None = None,
-    lookback_days: int = SEQUENCE_LENGTH + PREDICTION_HORIZON + 30,
+    lookback_days: int = SEQUENCE_LENGTH + PREDICTION_HORIZON + 100,
 ) -> pd.DataFrame:
     """
     Run the full signal pipeline for today.
