@@ -10,7 +10,6 @@ data/processed/
 data/cache/
 logs/
 *.log
-models/tft/*.ckpt
-models/tft/last.ckpt
-models/xgboost/*.joblib
+# models/tft/*.ckpt   # tracked intentionally
+# models/xgboost/*.joblib  # tracked intentionally
 .ipynb_checkpoints/
