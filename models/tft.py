@@ -4,12 +4,11 @@ import logging
 import time
 import pandas as pd
 import torch
-import pytorch_lightning as pl
+import lightning.pytorch as pl
 from pytorch_forecasting import TemporalFusionTransformer, TimeSeriesDataSet
 from pytorch_forecasting.data import GroupNormalizer
 from pytorch_forecasting.metrics import QuantileLoss
-from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint, Callback
-from torch.utils.data import DataLoader
+from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint, Callback
 
 from config.settings import MODEL_TFT, SEQUENCE_LENGTH, PREDICTION_HORIZON
 from .dataset import TARGET, TIME_VARYING_UNKNOWN, STATIC_CATEGORICALS
@@ -43,11 +42,12 @@ class EpochLogger(Callback):
 def _make_timeseries_dataset(
     df: pd.DataFrame,
     reference_dataset: TimeSeriesDataSet | None = None,
+    predict: bool = False,
 ) -> TimeSeriesDataSet:
     feature_cols = [c for c in TIME_VARYING_UNKNOWN if c in df.columns]
 
     if reference_dataset is not None:
-        return TimeSeriesDataSet.from_dataset(reference_dataset, df, predict=True, stop_randomization=True)
+        return TimeSeriesDataSet.from_dataset(reference_dataset, df, predict=predict, stop_randomization=True)
 
     return TimeSeriesDataSet(
         df,
@@ -84,10 +84,20 @@ def train(
     resume: bool = True,
 ) -> TemporalFusionTransformer:
     train_ds = _make_timeseries_dataset(train_df)
-    val_ds = _make_timeseries_dataset(val_df, reference_dataset=train_ds)
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=2)
-    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=2)
+    # Val dataset needs encoder context from training tail; prepend it per symbol
+    val_with_context = pd.concat([
+        pd.concat([
+            grp_train.iloc[-SEQUENCE_LENGTH:],
+            val_df[val_df["symbol"] == sym],
+        ])
+        for sym, grp_train in train_df.groupby("symbol")
+        if sym in val_df["symbol"].values
+    ], ignore_index=True)
+    val_ds = _make_timeseries_dataset(val_with_context, reference_dataset=train_ds)
+
+    train_loader = train_ds.to_dataloader(train=True, batch_size=batch_size, num_workers=0)
+    val_loader = val_ds.to_dataloader(train=False, batch_size=batch_size, num_workers=0)
 
     resume_ckpt = _latest_checkpoint() if resume else None
     if resume_ckpt:
@@ -123,6 +133,7 @@ def train(
         gradient_clip_val=0.1,
         callbacks=[checkpoint_cb, early_stop_cb, EpochLogger()],
         enable_progress_bar=True,
+        num_sanity_val_steps=0,
     )
     trainer.fit(tft, train_loader, val_loader, ckpt_path=resume_ckpt)
 
@@ -145,8 +156,8 @@ def predict(model: TemporalFusionTransformer, df: pd.DataFrame, train_df: pd.Dat
     df must have the same feature columns as train_df.
     """
     train_ds = _make_timeseries_dataset(train_df)
-    pred_ds = _make_timeseries_dataset(df, reference_dataset=train_ds)
-    loader = DataLoader(pred_ds, batch_size=128, shuffle=False, num_workers=2)
+    pred_ds = _make_timeseries_dataset(df, reference_dataset=train_ds, predict=True)
+    loader = pred_ds.to_dataloader(train=False, batch_size=128, num_workers=0)
 
     raw_predictions, index = model.predict(loader, mode="prediction", return_index=True)
     # QuantileLoss returns multiple quantiles; take the median (index 3 of 7 default quantiles)
