@@ -19,7 +19,7 @@ TIME_VARYING_UNKNOWN = [
     # Momentum
     "RSI_14", "STOCHk_14_3_3", "STOCHd_14_3_3",
     # Volatility
-    "BBL_20_2.0_2.0", "BBM_20_2.0_2.0", "BBU_20_2.0_2.0", "BBB_20_2.0_2.0", "BBP_20_2.0_2.0",
+    "BBL_20_2_0_2_0", "BBM_20_2_0_2_0", "BBU_20_2_0_2_0", "BBB_20_2_0_2_0", "BBP_20_2_0_2_0",
     "ATRr_14",
     # Volume
     "OBV", "VWAP_D",

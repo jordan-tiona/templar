@@ -37,6 +37,8 @@ def add_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
     # Log volume
     df["log_volume"] = np.log1p(df["volume"])
 
+    # pytorch-forecasting rejects column names containing '.'
+    df.columns = [c.replace(".", "_") for c in df.columns]
     return df
 
 
