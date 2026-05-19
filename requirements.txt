@@ -1,0 +1,33 @@
+# Data fetching
+alpaca-py
+yfinance
+
+# Feature engineering
+pandas
+numpy
+pandas-ta
+
+# ML - core
+torch
+pytorch-forecasting
+pytorch-lightning
+xgboost
+scikit-learn
+
+# Sentiment
+transformers           # FinBERT
+praw                   # Reddit API
+
+pyarrow
+
+# Utilities
+python-dotenv
+requests
+tqdm
+joblib
+
+# Notebooks / visualization
+jupyter
+matplotlib
+seaborn
+plotly

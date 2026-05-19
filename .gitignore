@@ -1,0 +1,16 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+data/raw/
+data/processed/
+data/cache/
+logs/
+*.log
+models/tft/*.ckpt
+models/tft/last.ckpt
+models/xgboost/*.joblib
+.ipynb_checkpoints/
