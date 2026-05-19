@@ -1,6 +1,7 @@
 """News sentiment scoring via GDELT DOC 2.0 timeline API + FinBERT (kept for future use)."""
 
 import logging
+import time
 from datetime import datetime, timedelta
 from functools import lru_cache
 
@@ -143,6 +144,7 @@ def fetch_news_sentiment(
         if not chunk_df.empty:
             all_chunks.append(chunk_df)
         chunk_start = chunk_end
+        time.sleep(1)  # avoid GDELT rate limiting across chunks
 
     if not all_chunks:
         log.warning("No GDELT data returned for %s", symbol)
