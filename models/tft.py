@@ -4,14 +4,21 @@ import logging
 import time
 import pandas as pd
 import torch
+import torch.serialization
 import lightning.pytorch as pl
 from pytorch_forecasting import TemporalFusionTransformer, TimeSeriesDataSet
 from pytorch_forecasting.data import GroupNormalizer
+from pytorch_forecasting.data.encoders import NaNLabelEncoder, TorchNormalizer, EncoderNormalizer
 from pytorch_forecasting.metrics import QuantileLoss
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint, Callback
 
 from config.settings import MODEL_TFT, SEQUENCE_LENGTH, PREDICTION_HORIZON
 from .dataset import TARGET, TIME_VARYING_UNKNOWN, STATIC_CATEGORICALS
+
+# Allow pytorch-forecasting classes when loading checkpoints in PyTorch 2.6+
+torch.serialization.add_safe_globals([
+    GroupNormalizer, NaNLabelEncoder, TorchNormalizer, EncoderNormalizer,
+])
 
 log = logging.getLogger(__name__)
 
