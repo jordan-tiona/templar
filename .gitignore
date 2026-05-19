@@ -13,3 +13,4 @@ logs/
 # models/tft/*.ckpt   # tracked intentionally
 # models/xgboost/*.joblib  # tracked intentionally
 .ipynb_checkpoints/
+lightning_logs/
