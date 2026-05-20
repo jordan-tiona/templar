@@ -12,6 +12,7 @@ from .risk import (
     max_position_value,
     position_value,
     current_position,
+    stop_loss_triggered,
 )
 
 log = logging.getLogger(__name__)
@@ -46,15 +47,35 @@ def execute_signals(
     buy_symbols = set(signals[signals["signal"] == "BUY"].index)
     short_symbols = set(signals[signals["signal"] == "SHORT"].index)
 
-    # --- Step 1: close positions no longer in the target set ---
+    # --- Step 0: force-close any position that hit stop loss or take profit ---
     try:
         open_positions = client.get_all_positions()
     except Exception as e:
         log.error("Failed to fetch open positions: %s", e)
         open_positions = []
 
+    stopped_out = set()
+    for pos in open_positions:
+        if stop_loss_triggered(pos):
+            sym = pos.symbol
+            log.info("%s: stop/take-profit triggered — closing", sym)
+            if not dry_run:
+                try:
+                    client.close_position(sym)
+                    records.append({"symbol": sym, "action": "STOP", "qty": abs(int(float(pos.qty))), "order_id": "stop"})
+                except Exception as e:
+                    log.error("Failed to close %s on stop: %s", sym, e)
+            else:
+                records.append({"symbol": sym, "action": "STOP", "qty": abs(int(float(pos.qty))), "order_id": "dry_run"})
+            stopped_out.add(sym)
+            buy_symbols.discard(sym)
+            short_symbols.discard(sym)
+
+    # --- Step 1: close positions no longer in the target set ---
     for pos in open_positions:
         sym = pos.symbol
+        if sym in stopped_out:
+            continue  # already closed in step 0
         qty = float(pos.qty)
         if qty > 0 and sym in buy_symbols:
             continue  # long position we still want — keep
