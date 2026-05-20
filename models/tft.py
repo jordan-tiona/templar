@@ -18,6 +18,7 @@ from .dataset import TARGET, TIME_VARYING_UNKNOWN, STATIC_CATEGORICALS
 # Allow pytorch-forecasting classes when loading checkpoints in PyTorch 2.6+
 torch.serialization.add_safe_globals([
     GroupNormalizer, NaNLabelEncoder, TorchNormalizer, EncoderNormalizer,
+    pd.DataFrame,
 ])
 
 log = logging.getLogger(__name__)
@@ -89,7 +90,7 @@ def train(
     hidden_size: int = 64,
     attention_head_size: int = 4,
     dropout: float = 0.1,
-    resume: bool = True,
+    resume: bool = False,
 ) -> TemporalFusionTransformer:
     train_ds = _make_timeseries_dataset(train_df)
 
