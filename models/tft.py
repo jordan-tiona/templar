@@ -23,6 +23,9 @@ torch.serialization.add_safe_globals([
 
 log = logging.getLogger(__name__)
 
+# Use Tensor Cores on Ampere+ GPUs (3080 Ti, etc.) for ~2x throughput with minimal precision loss
+torch.set_float32_matmul_precision("medium")
+
 
 class EpochLogger(Callback):
     """Logs epoch timing and loss to the standard logger after each validation pass."""
@@ -87,7 +90,7 @@ def train(
     max_epochs: int = 50,
     batch_size: int = 64,
     learning_rate: float = TFT_LEARNING_RATE,
-    hidden_size: int = 64,
+    hidden_size: int = 128,
     attention_head_size: int = 4,
     dropout: float = 0.1,
     resume: bool = False,
@@ -120,7 +123,7 @@ def train(
         hidden_size=hidden_size,
         attention_head_size=attention_head_size,
         dropout=dropout,
-        hidden_continuous_size=32,
+        hidden_continuous_size=64,
         loss=QuantileLoss(),
         log_interval=10,
         reduce_on_plateau_patience=4,
