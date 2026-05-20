@@ -3,8 +3,10 @@
 import logging
 import pandas as pd
 from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import MarketOrderRequest, StopOrderRequest, GetOrdersRequest
-from alpaca.trading.enums import OrderSide, TimeInForce, QueryOrderStatus
+from alpaca.trading.requests import (
+    MarketOrderRequest, GetOrdersRequest, StopLossRequest,
+)
+from alpaca.trading.enums import OrderSide, TimeInForce, QueryOrderStatus, OrderClass
 
 from config.settings import STOP_LOSS_PCT
 from .risk import (
@@ -44,37 +46,47 @@ def _cancel_open_orders(client: TradingClient, symbol: str, dry_run: bool) -> No
         log.warning("Could not cancel orders for %s: %s", symbol, e)
 
 
-def _submit_stop_order(
+def _open_position(
     client: TradingClient,
     symbol: str,
     qty: int,
-    entry_price: float,
-    is_long: bool,
+    price: float,
+    side: OrderSide,
     dry_run: bool,
-) -> None:
-    """Submit a GTC stop-loss order at STOP_LOSS_PCT from entry price."""
+) -> str | None:
+    """
+    Submit a bracket market order with an attached GTC stop-loss.
+    Using bracket order avoids Alpaca's wash-trade rejection that occurs when
+    a stop order is submitted separately against a pending market order.
+    """
+    is_long = side == OrderSide.BUY
     if is_long:
-        stop_price = round(entry_price * (1 - STOP_LOSS_PCT), 2)
-        side = OrderSide.SELL
+        stop_price = round(price * (1 - STOP_LOSS_PCT), 2)
     else:
-        stop_price = round(entry_price * (1 + STOP_LOSS_PCT), 2)
-        side = OrderSide.BUY
+        stop_price = round(price * (1 + STOP_LOSS_PCT), 2)
 
-    log.info("%s: GTC stop at $%.2f (%+.0f%%)", symbol, stop_price,
+    action = "BUY" if is_long else "SHORT"
+    log.info("%s %s %d shares @ ~$%.2f | stop at $%.2f (%+.0f%%)",
+             symbol, action, qty, price, stop_price,
              -STOP_LOSS_PCT * 100 if is_long else STOP_LOSS_PCT * 100)
 
-    if not dry_run:
-        try:
-            req = StopOrderRequest(
-                symbol=symbol,
-                qty=qty,
-                side=side,
-                stop_price=stop_price,
-                time_in_force=TimeInForce.GTC,
-            )
-            client.submit_order(req)
-        except Exception as e:
-            log.error("Failed to submit stop order for %s: %s", symbol, e)
+    if dry_run:
+        return "dry_run"
+
+    try:
+        req = MarketOrderRequest(
+            symbol=symbol,
+            qty=qty,
+            side=side,
+            time_in_force=TimeInForce.DAY,
+            order_class=OrderClass.OTO,
+            stop_loss=StopLossRequest(stop_price=stop_price),
+        )
+        order = client.submit_order(req)
+        return str(order.id)
+    except Exception as e:
+        log.error("Failed to submit %s order for %s: %s", action, symbol, e)
+        return None
 
 
 def execute_signals(
@@ -84,7 +96,7 @@ def execute_signals(
 ) -> list[dict]:
     """
     Daily rebalance: take profits, close stale positions, open/maintain BUY and SHORT targets.
-    Stop losses are handled automatically by Alpaca GTC stop orders placed at position open.
+    Stop losses are attached as OTO bracket orders at position open.
     """
     client = get_client()
     records = []
@@ -162,19 +174,9 @@ def execute_signals(
         if qty <= 0:
             log.info("BUY %s: insufficient funds", symbol)
             continue
-        log.info("%s BUY %d shares @ ~$%.2f", symbol, qty, price)
-        if not dry_run:
-            req = MarketOrderRequest(
-                symbol=symbol, qty=qty,
-                side=OrderSide.BUY, time_in_force=TimeInForce.DAY,
-            )
-            order = client.submit_order(req)
-            order_id = str(order.id)
+        order_id = _open_position(client, symbol, qty, price, OrderSide.BUY, dry_run)
+        if order_id:
             records.append({"symbol": symbol, "action": "BUY", "qty": qty, "order_id": order_id})
-            _submit_stop_order(client, symbol, qty, price, is_long=True, dry_run=False)
-        else:
-            records.append({"symbol": symbol, "action": "BUY", "qty": qty, "order_id": "dry_run"})
-            _submit_stop_order(client, symbol, qty, price, is_long=True, dry_run=True)
 
     # --- Step 3: open / top-up SHORT positions ---
     for symbol in short_symbols:
@@ -190,18 +192,8 @@ def execute_signals(
         if qty <= 0:
             log.info("SHORT %s: insufficient funds", symbol)
             continue
-        log.info("%s SHORT %d shares @ ~$%.2f", symbol, qty, price)
-        if not dry_run:
-            req = MarketOrderRequest(
-                symbol=symbol, qty=qty,
-                side=OrderSide.SELL, time_in_force=TimeInForce.DAY,
-            )
-            order = client.submit_order(req)
-            order_id = str(order.id)
+        order_id = _open_position(client, symbol, qty, price, OrderSide.SELL, dry_run)
+        if order_id:
             records.append({"symbol": symbol, "action": "SHORT", "qty": qty, "order_id": order_id})
-            _submit_stop_order(client, symbol, qty, price, is_long=False, dry_run=False)
-        else:
-            records.append({"symbol": symbol, "action": "SHORT", "qty": qty, "order_id": "dry_run"})
-            _submit_stop_order(client, symbol, qty, price, is_long=False, dry_run=True)
 
     return records

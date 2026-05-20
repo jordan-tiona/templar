@@ -13,13 +13,26 @@ Commands:
 import argparse
 import logging
 import sys
+from datetime import date
+from pathlib import Path
 
+_LOG_DIR = Path(__file__).parent / "logs"
+_LOG_DIR.mkdir(exist_ok=True)
+_LOG_FILE = _LOG_DIR / f"daily_{date.today()}.log"
+
+_file_handler = logging.FileHandler(_LOG_FILE)
+_file_handler.setFormatter(logging.Formatter(
+    "%(asctime)s %(levelname)s %(name)s — %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+))
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s — %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[logging.StreamHandler(sys.stdout), _file_handler],
 )
 log = logging.getLogger("templar")
+log.info("Log file: %s", _LOG_FILE)
 
 
 def cmd_fetch(args):
