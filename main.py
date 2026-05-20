@@ -78,7 +78,6 @@ def cmd_run(args):
 
     log.info("Generating signals...")
     signals = generate_signals(watchlist)
-    print(signals[["ensemble_score", "signal"]].to_string())
 
     # Latest close prices for position sizing
     bars = fetch_bars(watchlist)

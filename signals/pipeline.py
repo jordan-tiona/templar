@@ -48,8 +48,9 @@ def generate_signals(
     tft_preds, xgb_preds = {}, {}
     for sym, df in feature_dfs.items():
         df_with_target = add_target(df)
-        if len(df_with_target) < SEQUENCE_LENGTH:
-            log.warning("%s has insufficient history (%d rows), skipping", sym, len(df_with_target))
+        min_rows = SEQUENCE_LENGTH + PREDICTION_HORIZON + 20
+        if len(df_with_target) < min_rows:
+            log.warning("%s has insufficient history (%d rows, need %d), skipping", sym, len(df_with_target), min_rows)
             continue
 
         # Use only the latest row for the signal

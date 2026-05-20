@@ -178,9 +178,13 @@ def load(checkpoint_path: str | None = None) -> TemporalFusionTransformer:
 
 def predict(model: TemporalFusionTransformer, df: pd.DataFrame, train_df: pd.DataFrame) -> pd.Series:
     """
-    Return median predicted 5-day forward return per row.
+    Return median predicted forward return per row.
     df must have the same feature columns as train_df.
     """
+    import logging as _logging
+    for _name in ["lightning.pytorch.utilities.rank_zero", "lightning.pytorch.accelerators.cuda"]:
+        _logging.getLogger(_name).setLevel(_logging.ERROR)
+
     train_ds = _make_timeseries_dataset(train_df)
     pred_ds = _make_timeseries_dataset(df, reference_dataset=train_ds, predict=True)
     loader = pred_ds.to_dataloader(train=False, batch_size=128, num_workers=0)
