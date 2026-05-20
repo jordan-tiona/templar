@@ -45,7 +45,7 @@ DAILY_BAR_TIMEFRAME = "1Day"
 
 # Model
 SEQUENCE_LENGTH = 60       # lookback window in trading days (~3 months)
-PREDICTION_HORIZON = 5     # days ahead to predict
+PREDICTION_HORIZON = 20    # days ahead to predict (4 weeks — more signal, less noise than 5d)
 TRAIN_SPLIT = 0.7
 VAL_SPLIT = 0.15
 # test = remaining 0.15
