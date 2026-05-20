@@ -92,7 +92,7 @@ def train(
     learning_rate: float = TFT_LEARNING_RATE,
     hidden_size: int = 128,
     attention_head_size: int = 4,
-    dropout: float = 0.1,
+    dropout: float = 0.3,
     resume: bool = False,
 ) -> TemporalFusionTransformer:
     train_ds = _make_timeseries_dataset(train_df)
@@ -137,7 +137,7 @@ def train(
         save_last=True,   # always keep latest for resuming
         mode="min",
     )
-    early_stop_cb = EarlyStopping(monitor="val_loss", patience=8, mode="min")
+    early_stop_cb = EarlyStopping(monitor="val_loss", patience=12, mode="min")
 
     trainer = pl.Trainer(
         max_epochs=max_epochs,
