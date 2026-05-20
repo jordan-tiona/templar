@@ -24,7 +24,12 @@ def combine(
     normed = scaler.fit_transform(df.values)
     df_normed = pd.DataFrame(normed, index=df.index, columns=["tft_n", "xgb_n"])
 
-    score = tft_weight * df_normed["tft_n"] + xgb_weight * df_normed["xgb_n"]
+    raw = tft_weight * df_normed["tft_n"] + xgb_weight * df_normed["xgb_n"]
+
+    # Re-normalize blended score to [0, 1] so thresholds work as intended.
+    # The weighted sum doesn't span [0,1] when the two models disagree on ranking.
+    lo, hi = raw.min(), raw.max()
+    score = (raw - lo) / (hi - lo) if hi > lo else pd.Series(0.5, index=raw.index)
     score.name = "ensemble_score"
     return score
 
