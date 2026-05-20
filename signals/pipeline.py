@@ -32,7 +32,11 @@ def generate_signals(
         if sym not in bars or bars[sym].empty:
             log.warning("No bar data for %s, skipping", sym)
             continue
-        df = bars[sym].tail(lookback_days)
+        full_bars = bars[sym]
+        if len(full_bars) < 400:
+            log.warning("%s has insufficient total history (%d bars), skipping", sym, len(full_bars))
+            continue
+        df = full_bars.tail(lookback_days)
         sentiment = fetch_news_sentiment(sym)
         feature_dfs[sym] = build_features(sym, df, sentiment, save=False)
 
@@ -48,9 +52,8 @@ def generate_signals(
     tft_preds, xgb_preds = {}, {}
     for sym, df in feature_dfs.items():
         df_with_target = add_target(df)
-        min_rows = max(SEQUENCE_LENGTH + PREDICTION_HORIZON + 20, 400)
-        if len(df_with_target) < min_rows:
-            log.warning("%s has insufficient history (%d rows, need %d), skipping", sym, len(df_with_target), min_rows)
+        if len(df_with_target) < SEQUENCE_LENGTH + PREDICTION_HORIZON + 20:
+            log.warning("%s: too few rows after target drop (%d), skipping", sym, len(df_with_target))
             continue
 
         # Use only the latest row for the signal
