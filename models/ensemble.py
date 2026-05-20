@@ -35,8 +35,14 @@ def combine(
 
 
 def to_signals(score: pd.Series) -> pd.Series:
-    """Map ensemble score to BUY / SELL / HOLD."""
+    """
+    Map ensemble score to BUY / SHORT / HOLD.
+    Shorts the bottom N symbols to match long count (market-neutral).
+    """
     signals = pd.Series("HOLD", index=score.index, name="signal")
-    signals[score >= BUY_THRESHOLD] = "BUY"
-    signals[score <= SELL_THRESHOLD] = "SELL"
+    buy_mask = score >= BUY_THRESHOLD
+    signals[buy_mask] = "BUY"
+    n_buys = int(buy_mask.sum())
+    if n_buys > 0:
+        signals[score.nsmallest(n_buys).index] = "SHORT"
     return signals
