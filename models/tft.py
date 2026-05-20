@@ -142,7 +142,7 @@ def train(
     trainer = pl.Trainer(
         max_epochs=max_epochs,
         accelerator="auto",  # uses GPU if available, falls back to CPU
-        gradient_clip_val=0.1,
+        gradient_clip_val=1.0,
         callbacks=[checkpoint_cb, early_stop_cb, EpochLogger()],
         enable_progress_bar=True,
         num_sanity_val_steps=0,
