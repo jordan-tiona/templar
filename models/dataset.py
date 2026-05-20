@@ -31,7 +31,7 @@ TARGET = "target_return"
 
 
 def add_target(df: pd.DataFrame, horizon: int = PREDICTION_HORIZON) -> pd.DataFrame:
-    """Add forward return as prediction target, drop rows where target is unknown."""
+    """Add raw forward return; cross-sectional z-score is applied in prepare_combined."""
     df = df.copy()
     df[TARGET] = df["close"].shift(-horizon) / df["close"] - 1
     df = df.dropna(subset=[TARGET])
@@ -43,7 +43,8 @@ def prepare_combined(
 ) -> pd.DataFrame:
     """
     Merge all symbols into a single long-format DataFrame suitable for TFT.
-    Adds target, time_idx (integer), and symbol column.
+    Target is cross-sectionally z-scored per calendar date so the model learns
+    relative outperformance rather than absolute market direction.
     """
     frames = []
     for sym, df in feature_dfs.items():
@@ -51,13 +52,23 @@ def prepare_combined(
         df = df.copy()
         df["symbol"] = sym
         df["time_idx"] = np.arange(len(df))
-        # Keep only columns both models need
-        cols = [TARGET, "symbol", "time_idx"] + [
+        df["_date"] = df.index  # preserve date for cross-sectional grouping
+        cols = [TARGET, "symbol", "time_idx", "_date"] + [
             c for c in TIME_VARYING_UNKNOWN if c in df.columns
         ]
         frames.append(df[cols])
 
-    return pd.concat(frames, ignore_index=True)
+    combined = pd.concat(frames, ignore_index=True)
+
+    # Cross-sectional z-score: for each calendar date, normalize returns
+    # across all symbols. Removes market beta so model predicts relative
+    # performance ("will this stock beat peers") instead of market direction.
+    combined[TARGET] = combined.groupby("_date")[TARGET].transform(
+        lambda x: (x - x.mean()) / (x.std() + 1e-8)
+    )
+    combined = combined.drop(columns="_date")
+
+    return combined
 
 
 def train_val_test_split(
