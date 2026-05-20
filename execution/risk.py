@@ -58,34 +58,21 @@ def position_value(client: TradingClient, symbol: str) -> float:
     return abs(float(pos.market_value))
 
 
-def stop_loss_triggered(pos: Position) -> bool:
+def take_profit_triggered(pos: Position) -> bool:
     """
-    Return True if position should be force-closed due to stop loss or take profit.
-    Works for both long (qty > 0) and short (qty < 0) positions.
-    Alpaca provides unrealized_plpc as a decimal (e.g. -0.07 = -7%).
+    Return True if position has hit the take-profit target.
+    Stop losses are handled by Alpaca native GTC stop orders (not checked here).
     """
     try:
-        plpc = float(pos.unrealized_plpc)  # positive = gain, negative = loss
+        plpc = float(pos.unrealized_plpc)
     except (TypeError, ValueError):
         return False
 
-    qty = float(pos.qty)
-    is_long = qty > 0
-
-    if is_long:
-        if plpc <= -STOP_LOSS_PCT:
-            log.warning("%s long stop loss: %.2f%%", pos.symbol, plpc * 100)
-            return True
-        if plpc >= TAKE_PROFIT_PCT:
-            log.info("%s long take profit: %.2f%%", pos.symbol, plpc * 100)
-            return True
-    else:
-        # Short: profit when price falls (plpc > 0 means we're losing on a short)
-        if plpc >= STOP_LOSS_PCT:
-            log.warning("%s short stop loss: %.2f%%", pos.symbol, plpc * 100)
-            return True
-        if plpc <= -TAKE_PROFIT_PCT:
-            log.info("%s short take profit: %.2f%%", pos.symbol, plpc * 100)
-            return True
-
+    is_long = float(pos.qty) > 0
+    if is_long and plpc >= TAKE_PROFIT_PCT:
+        log.info("%s long take profit: +%.2f%%", pos.symbol, plpc * 100)
+        return True
+    if not is_long and plpc <= -TAKE_PROFIT_PCT:
+        log.info("%s short take profit: +%.2f%%", pos.symbol, abs(plpc) * 100)
+        return True
     return False
