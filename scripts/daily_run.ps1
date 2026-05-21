@@ -9,7 +9,7 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = Split-Path $PSScriptRoot -Parent
 $LogDir = Join-Path $Root "logs"
-$LogFile = Join-Path $LogDir "daily_$(Get-Date -Format 'yyyy-MM-dd').log"
+$LogFile = Join-Path $LogDir "scheduler_$(Get-Date -Format 'yyyy-MM-dd').log"
 
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
