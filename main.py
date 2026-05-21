@@ -1,5 +1,5 @@
 """
-Templar — entry point.
+Templar - entry point.
 
 Commands:
   python main.py fetch              -- download/refresh bar data
@@ -22,12 +22,12 @@ _LOG_FILE = _LOG_DIR / f"daily_{date.today()}.log"
 
 _file_handler = logging.FileHandler(_LOG_FILE)
 _file_handler.setFormatter(logging.Formatter(
-    "%(asctime)s %(levelname)s %(name)s — %(message)s",
+    "%(asctime)s %(levelname)s %(name)s |%(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 ))
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s — %(message)s",
+    format="%(asctime)s %(levelname)s %(name)s |%(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
     handlers=[logging.StreamHandler(sys.stdout), _file_handler],
 )
@@ -55,30 +55,30 @@ def cmd_train(args):
 
     watchlist = get_watchlist()
 
-    log.info("━━━ PHASE 1/3: Building features ━━━")
+    log.info("--- PHASE 1/3: Building features ---")
     bars = fetch_bars(watchlist)
     feature_dfs = {}
     for i, (sym, df) in enumerate(bars.items(), 1):
-        log.info("  [%d/%d] %s — %d bars", i, len(bars), sym, len(df))
+        log.info("  [%d/%d] %s |%d bars", i, len(bars), sym, len(df))
         sentiment = fetch_all_sentiment([sym])[sym]
         feature_dfs[sym] = build_features(sym, df, sentiment)
 
     combined = prepare_combined(feature_dfs)
     train_df, val_df, test_df = train_val_test_split(combined)
     log.info(
-        "Dataset split — train: %d rows, val: %d rows, test: %d rows",
+        "Dataset split |train: %d rows, val: %d rows, test: %d rows",
         len(train_df), len(val_df), len(test_df),
     )
 
-    log.info("━━━ PHASE 2/3: Training XGBoost ━━━")
+    log.info("--- PHASE 2/3: Training XGBoost ---")
     xgb_model.train(train_df, val_df)
     log.info("XGBoost training complete")
 
-    log.info("━━━ PHASE 3/3: Training TFT ━━━")
-    log.info("This will take 20–40 minutes on CPU — progress shown per epoch below")
+    log.info("--- PHASE 3/3: Training TFT ---")
+    log.info("This will take 20-40 minutes on CPU |progress shown per epoch below")
     tft_model.train(train_df, val_df)
 
-    log.info("━━━ Training complete ━━━")
+    log.info("--- Training complete ---")
 
 
 def cmd_run(args):
@@ -116,22 +116,22 @@ def cmd_tune(args):
 
     watchlist = get_watchlist()
 
-    log.info("━━━ PHASE 1/2: Building features ━━━")
+    log.info("--- PHASE 1/2: Building features ---")
     bars = fetch_bars(watchlist)
     feature_dfs = {}
     for i, (sym, df) in enumerate(bars.items(), 1):
-        log.info("  [%d/%d] %s — %d bars", i, len(bars), sym, len(df))
+        log.info("  [%d/%d] %s |%d bars", i, len(bars), sym, len(df))
         sentiment = fetch_all_sentiment([sym])[sym]
         feature_dfs[sym] = build_features(sym, df, sentiment)
 
     combined = prepare_combined(feature_dfs)
     train_df, val_df, _ = train_val_test_split(combined)
     log.info(
-        "Dataset split — train: %d rows, val: %d rows",
+        "Dataset split |train: %d rows, val: %d rows",
         len(train_df), len(val_df),
     )
 
-    log.info("━━━ PHASE 2/2: Optuna hyperparameter search (%d trials) ━━━", args.trials)
+    log.info("--- PHASE 2/2: Optuna hyperparameter search (%d trials) ---", args.trials)
     best_params = xgb_model.tune(train_df, val_df, n_trials=args.trials)
 
     log.info("Best params found:")
@@ -157,7 +157,7 @@ def cmd_screen(args):
     if args.save:
         save_watchlist(results)
         log.info(
-            "Watchlist saved — `fetch` and `train` commands will now use these %d symbols.",
+            "Watchlist saved |`fetch` and `train` commands will now use these %d symbols.",
             len(results),
         )
 
