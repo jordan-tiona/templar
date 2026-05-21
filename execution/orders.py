@@ -102,7 +102,7 @@ def execute_signals(
     records = []
 
     if drawdown_breached(client):
-        log.warning("Drawdown limit hit — no orders will be placed today")
+        log.warning("Drawdown limit hit - no orders will be placed today")
         return records
 
     buy_symbols = set(signals[signals["signal"] == "BUY"].index)
@@ -120,7 +120,7 @@ def execute_signals(
         if take_profit_triggered(pos):
             sym = pos.symbol
             _cancel_open_orders(client, sym, dry_run)
-            log.info("%s: take-profit — closing position", sym)
+            log.info("%s: take-profit - closing position", sym)
             if not dry_run:
                 try:
                     client.close_position(sym)
@@ -142,9 +142,9 @@ def execute_signals(
             continue
         qty = float(pos.qty)
         if qty > 0 and sym in buy_symbols:
-            continue  # long we still want — keep
+            continue  # long we still want - keep
         if qty < 0 and sym in short_symbols:
-            continue  # short we still want — keep
+            continue  # short we still want - keep
 
         side_label = "long" if qty > 0 else "short"
         _cancel_open_orders(client, sym, dry_run)

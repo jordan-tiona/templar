@@ -128,7 +128,7 @@ def explain_signal(symbol: str, lookback_days: int = SEQUENCE_LENGTH + PREDICTIO
     bar = "=" * w
 
     print(f"\n{bar}")
-    print(f"  Signal Explanation: {symbol}  —  {signal_date.date()}")
+    print(f"  Signal Explanation: {symbol}  -  {signal_date.date()}")
     print(bar)
     print(f"  Signal: {signal:4s}  |  Ensemble: {score_val:.3f}  |  "
           f"TFT pred: {tft_pred_val:+.2%}  |  XGB pred: {xgb_pred_val:+.2%}")
@@ -169,7 +169,7 @@ def explain_signal(symbol: str, lookback_days: int = SEQUENCE_LENGTH + PREDICTIO
     print(f"  {'Feature':<28} {'Contribution':>12}  Direction")
     print(f"  {'-'*28} {'-'*12}  ---------")
     for feat, val in top_shap.items():
-        direction = "▲ bullish" if val > 0 else "▼ bearish"
+        direction = "^ bullish" if val > 0 else "v bearish"
         print(f"  {feat:<28} {val:>+12.4f}  {direction}")
     print(f"  {'[bias / model base]':<28} {bias:>+12.4f}")
     print(f"  {'[XGB raw prediction]':<28} {xgb_pred_val:>+12.4f}")

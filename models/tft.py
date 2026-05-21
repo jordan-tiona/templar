@@ -43,7 +43,7 @@ class EpochLogger(Callback):
         epoch = trainer.current_epoch + 1
         remaining = (trainer.max_epochs - epoch) * elapsed
         log.info(
-            "Epoch %d/%d — train_loss: %.4f  val_loss: %.4f  elapsed: %.0fs  ~remaining: %.0fm",
+            "Epoch %d/%d - train_loss: %.4f  val_loss: %.4f  elapsed: %.0fs  ~remaining: %.0fm",
             epoch, trainer.max_epochs,
             float(train_loss), float(val_loss),
             elapsed, remaining / 60,
