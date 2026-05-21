@@ -6,7 +6,6 @@ param(
     [switch]$Dry  # pass -Dry to log orders without submitting
 )
 
-$ErrorActionPreference = "Stop"
 $Root = Split-Path $PSScriptRoot -Parent
 $LogDir = Join-Path $Root "logs"
 $LogFile = Join-Path $LogDir "scheduler_$(Get-Date -Format 'yyyy-MM-dd').log"
