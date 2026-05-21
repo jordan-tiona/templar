@@ -1,4 +1,4 @@
-# Templar — Task Scheduler setup
+# Templar - Task Scheduler setup
 # Run this once as Administrator to register both scheduled tasks.
 # Adjust $MarketOpenTime if you are not in Eastern Time.
 
@@ -18,7 +18,7 @@ if ($Dry) {
     $DailyArgs += " -Dry"
 }
 
-# --- Daily task (Mon–Fri) ---
+# --- Daily task (Mon-Fri) ---
 $dailyAction  = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $DailyArgs -WorkingDirectory $Root
 $dailyTrigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At $DailyTime
 $dailySettings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 2) -StartWhenAvailable

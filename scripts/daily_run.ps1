@@ -1,4 +1,4 @@
-# Templar — daily trading pipeline
+# Templar - daily trading pipeline
 # Runs fetch + signal generation + order execution before market open
 # Schedule: Mon-Fri at 9:00 AM local time (adjust to your timezone vs ET)
 
@@ -30,7 +30,7 @@ if (-not (Test-Path $Python)) {
 # Check if today is a market day (Mon-Fri); skip weekends
 $day = (Get-Date).DayOfWeek
 if ($day -eq "Saturday" -or $day -eq "Sunday") {
-    Log "Weekend — skipping."
+    Log "Weekend - skipping."
     exit 0
 }
 

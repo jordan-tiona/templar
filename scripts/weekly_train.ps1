@@ -1,4 +1,4 @@
-# Templar — weekly retrain pipeline
+# Templar - weekly retrain pipeline
 # Runs: fetch --refresh, tune (monthly), train
 # Schedule: Sunday at 10:00 PM local time
 
