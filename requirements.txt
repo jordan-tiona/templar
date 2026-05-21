@@ -27,6 +27,10 @@ optuna
 lxml                   # required by pd.read_html for Wikipedia
 gdeltdoc               # GDELT Python client (future use)
 
+# API
+fastapi
+uvicorn[standard]
+
 # Utilities
 python-dotenv
 requests

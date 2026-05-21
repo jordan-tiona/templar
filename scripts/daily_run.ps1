@@ -44,9 +44,9 @@ if ($LASTEXITCODE -ne 0) {
 
 # 2. Generate signals and execute orders
 Log "--- Phase 2: Generating signals and executing orders ---"
-$runArgs = @("main.py", "run")
-if ($Dry) { $runArgs += "--dry" }
-& $Python ($runArgs[0]) $runArgs[1..($runArgs.Length-1)] 2>&1 | Tee-Object -Append -FilePath $LogFile
+$MainPy = Join-Path $Root "main.py"
+$runArgs = if ($Dry) { @("run", "--dry") } else { @("run") }
+& $Python $MainPy $runArgs 2>&1 | Tee-Object -Append -FilePath $LogFile
 if ($LASTEXITCODE -ne 0) {
     Log "ERROR: run failed (exit $LASTEXITCODE)"
     exit 1
