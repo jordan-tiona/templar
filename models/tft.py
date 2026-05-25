@@ -244,3 +244,42 @@ def predict_cross_section(
     preds = raw_preds[:, median_idx].numpy()
 
     return pd.Series(preds, index=index_df["symbol"].values, name="tft_pred")
+
+
+def interpret(
+    model: TemporalFusionTransformer,
+    df_t: pd.DataFrame,
+) -> dict:
+    """
+    Variable importances and encoder attention weights for a single-symbol sequence.
+    Returns {variable_importance: [{feature, importance}], attention: [float × encoder_len]}
+    where attention is ordered oldest-to-newest (index 0 = SEQUENCE_LENGTH days ago).
+    """
+    import logging as _logging
+    for _name in ("lightning.pytorch.utilities.rank_zero", "lightning.pytorch.accelerators.cuda"):
+        _logging.getLogger(_name).setLevel(_logging.ERROR)
+
+    train_ds = _make_timeseries_dataset(df_t)
+    pred_ds = _make_timeseries_dataset(df_t, reference_dataset=train_ds, predict=True)
+    loader = pred_ds.to_dataloader(train=False, batch_size=1, num_workers=0)
+
+    raw_out = model.predict(loader, mode="raw")[0]
+    interp = model.interpret_output(raw_out, reduction="mean")
+
+    # Encoder variable importances
+    var_names = pred_ds.time_varying_unknown_reals
+    enc_imp = interp["encoder_variables"].numpy()
+    if len(enc_imp) > len(var_names):
+        enc_imp = enc_imp[-len(var_names):]
+    variable_importance = sorted(
+        [{"feature": n, "importance": float(v)} for n, v in zip(var_names, enc_imp)],
+        key=lambda x: x["importance"],
+        reverse=True,
+    )
+
+    # Attention weights: (encoder_len,) or (decoder_len, encoder_len) → mean over decoder
+    att = interp["attention"].numpy()
+    if att.ndim == 2:
+        att = att.mean(axis=0)
+
+    return {"variable_importance": variable_importance, "attention": att.tolist()}

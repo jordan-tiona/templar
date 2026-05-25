@@ -1,6 +1,7 @@
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, Cell, ReferenceLine, ResponsiveContainer,
+  AreaChart, Area,
 } from 'recharts'
 import type { ExplainData } from '../types'
 
@@ -243,6 +244,111 @@ export default function ExplainPanel({ symbol, data, loading, onClose }: Props) 
                 Model base: {(data.xgb_bias * 100).toFixed(4)}%
               </div>
             </div>
+
+            {/* TFT variable importance */}
+            {data.tft_interpretation && data.tft_interpretation.variable_importance.length > 0 && (() => {
+              const impData = data.tft_interpretation!.variable_importance.slice(0, 12).map(d => ({
+                name: shortName(d.feature),
+                fullName: d.feature,
+                value: d.importance,
+              }))
+              const impHeight = Math.max(160, impData.length * 24 + 20)
+              return (
+                <div style={{ padding: '12px 20px 4px', borderTop: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 }}>
+                    TFT Variable Importance
+                  </div>
+                  <ResponsiveContainer width="100%" height={impHeight}>
+                    <BarChart
+                      layout="vertical"
+                      data={impData}
+                      margin={{ top: 0, right: 16, left: 4, bottom: 0 }}
+                    >
+                      <CartesianGrid horizontal={false} stroke="var(--border)" strokeOpacity={0.6} />
+                      <XAxis
+                        type="number"
+                        tickFormatter={v => v.toFixed(3)}
+                        tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <YAxis
+                        type="category"
+                        dataKey="name"
+                        width={88}
+                        tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <Tooltip
+                        content={({ active, payload }: any) => {
+                          if (!active || !payload?.length) return null
+                          const d = payload[0].payload
+                          return (
+                            <div style={{ background: '#1a1e38', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 12 }}>
+                              <div style={{ fontWeight: 600, marginBottom: 3 }}>{d.fullName}</div>
+                              <div style={{ color: 'var(--accent)' }}>{d.value.toFixed(4)}</div>
+                            </div>
+                          )
+                        }}
+                        cursor={{ fill: 'rgba(255,255,255,0.03)' }}
+                      />
+                      <Bar dataKey="value" radius={[0, 2, 2, 0]} maxBarSize={14} fill="var(--accent)" fillOpacity={0.7} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )
+            })()}
+
+            {/* TFT attention weights */}
+            {data.tft_interpretation && data.tft_interpretation.attention.length > 0 && (() => {
+              const att = data.tft_interpretation!.attention
+              const attData = att.map((v, i) => ({ t: i - att.length + 1, weight: v }))
+              return (
+                <div style={{ padding: '12px 20px 4px', borderTop: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 }}>
+                    TFT Encoder Attention
+                    <span style={{ fontWeight: 400, marginLeft: 6, textTransform: 'none', letterSpacing: 0 }}>
+                      (days before signal)
+                    </span>
+                  </div>
+                  <ResponsiveContainer width="100%" height={120}>
+                    <AreaChart data={attData} margin={{ top: 4, right: 16, left: 4, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="attGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="var(--accent)" stopOpacity={0.4} />
+                          <stop offset="95%" stopColor="var(--accent)" stopOpacity={0.02} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid stroke="var(--border)" strokeOpacity={0.5} />
+                      <XAxis
+                        dataKey="t"
+                        tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
+                        axisLine={false}
+                        tickLine={false}
+                        interval={Math.floor(att.length / 6)}
+                      />
+                      <YAxis
+                        tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
+                        axisLine={false}
+                        tickLine={false}
+                        width={36}
+                        tickFormatter={v => v.toFixed(2)}
+                      />
+                      <Tooltip
+                        formatter={(v: number) => [v.toFixed(4), 'Attention']}
+                        labelFormatter={(t: number) => `${Math.abs(t)}d ago`}
+                        contentStyle={{ background: '#1a1e38', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12 }}
+                      />
+                      <Area type="monotone" dataKey="weight" stroke="var(--accent)" strokeWidth={1.5} fill="url(#attGrad)" dot={false} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                  <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 4, marginBottom: 8 }}>
+                    Peak at {(() => { const pk = attData.reduce((a, b) => b.weight > a.weight ? b : a); return `${Math.abs(pk.t)}d ago` })()}
+                  </div>
+                </div>
+              )
+            })()}
 
             {/* Market snapshot */}
             <div style={{ padding: '12px 20px 24px', borderTop: '1px solid var(--border)', marginTop: 8 }}>

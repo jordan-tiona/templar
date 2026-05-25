@@ -179,6 +179,23 @@ def execute_signals(
             records.append({"symbol": symbol, "action": "BUY", "qty": qty, "order_id": order_id})
 
     # --- Step 3: open / top-up SHORT positions ---
+    # Filter out stocks that can't be shorted or aren't easy-to-borrow.
+    # In paper trading Alpaca marks most stocks as shortable; this guard is critical for live.
+    borrowable = set()
+    for symbol in short_symbols:
+        try:
+            asset = client.get_asset(symbol)
+            if not asset.shortable:
+                log.warning("SHORT %s: not shortable on Alpaca, skipping", symbol)
+                continue
+            if not asset.easy_to_borrow:
+                log.warning("SHORT %s: hard-to-borrow (CTB costs may erase edge), skipping", symbol)
+                continue
+            borrowable.add(symbol)
+        except Exception as e:
+            log.warning("SHORT %s: could not verify borrowability (%s), skipping", symbol, e)
+    short_symbols = borrowable
+
     for symbol in short_symbols:
         price = prices.get(symbol)
         if not price or price <= 0:

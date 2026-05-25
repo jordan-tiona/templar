@@ -33,6 +33,7 @@ def _compute_explain(
     xgb_pred: float,
     ensemble_score: float,
     signal: str,
+    tft_interp: dict | None = None,
 ) -> dict:
     latest = df.iloc[-1]
     signal_date = df.index[-1]
@@ -66,6 +67,7 @@ def _compute_explain(
         "shap": shap_vals,
         "xgb_bias": float(contribs[-1]),
         "snapshot": snapshot,
+        "tft_interpretation": tft_interp,
     }
 
 
@@ -182,6 +184,13 @@ def generate_signals(
             continue
         inp = explain_inputs[sym]
         row = result.loc[sym]
+
+        tft_interp = None
+        try:
+            tft_interp = tft_model.interpret(tft, inp["df"])
+        except Exception as e:
+            log.warning("TFT interpretation failed for %s: %s", sym, e)
+
         try:
             explain[sym] = _compute_explain(
                 sym=sym,
@@ -193,6 +202,7 @@ def generate_signals(
                 xgb_pred=float(row["xgb_pred"]),
                 ensemble_score=float(row["ensemble_score"]),
                 signal=row["signal"],
+                tft_interp=tft_interp,
             )
         except Exception as e:
             log.error("Failed to compute explain data for %s: %s", sym, e)

@@ -36,6 +36,16 @@ export interface ShapEntry {
   value: number
 }
 
+export interface TftVarImportance {
+  feature: string
+  importance: number
+}
+
+export interface TftInterpretation {
+  variable_importance: TftVarImportance[]
+  attention: number[]
+}
+
 export interface ExplainData {
   symbol: string
   date: string
@@ -46,6 +56,7 @@ export interface ExplainData {
   shap: ShapEntry[]
   xgb_bias: number
   snapshot: Record<string, number | null>
+  tft_interpretation?: TftInterpretation | null
 }
 
 export interface HistoryEntry {
