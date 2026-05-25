@@ -53,8 +53,16 @@ VAL_SPLIT = 0.15
 # Watchlist file path (overrides WATCHLIST when present)
 WATCHLIST_PATH = ROOT / "watchlist.json"
 
-# Model — TFT learning rate
+# Model — TFT
 TFT_LEARNING_RATE = 3e-4
+TFT_HIDDEN_SIZE = 32           # reduced from 96; model was too large for 40K rows
+TFT_ATTENTION_HEADS = 2        # reduced from 4
+TFT_DROPOUT = 0.5              # increased from 0.3
+
+# Ensemble weights — adjust as model IC warrants
+# TFT weight set to 0 until it demonstrates positive test IC
+TFT_ENSEMBLE_WEIGHT = 0.0
+XGB_ENSEMBLE_WEIGHT = 1.0
 
 # Signal thresholds
 BUY_THRESHOLD = 0.6        # ensemble confidence to trigger buy

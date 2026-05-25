@@ -12,7 +12,10 @@ from pytorch_forecasting.data.encoders import NaNLabelEncoder, TorchNormalizer, 
 from pytorch_forecasting.metrics import QuantileLoss
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint, Callback
 
-from config.settings import MODEL_TFT, SEQUENCE_LENGTH, PREDICTION_HORIZON, TFT_LEARNING_RATE
+from config.settings import (
+    MODEL_TFT, SEQUENCE_LENGTH, PREDICTION_HORIZON,
+    TFT_LEARNING_RATE, TFT_HIDDEN_SIZE, TFT_ATTENTION_HEADS, TFT_DROPOUT,
+)
 from .dataset import TARGET, TIME_VARYING_UNKNOWN, STATIC_CATEGORICALS
 
 # Allow pytorch-forecasting classes when loading checkpoints in PyTorch 2.6+
@@ -90,9 +93,9 @@ def train(
     max_epochs: int = 50,
     batch_size: int = 64,
     learning_rate: float = TFT_LEARNING_RATE,
-    hidden_size: int = 96,
-    attention_head_size: int = 4,
-    dropout: float = 0.3,
+    hidden_size: int = TFT_HIDDEN_SIZE,
+    attention_head_size: int = TFT_ATTENTION_HEADS,
+    dropout: float = TFT_DROPOUT,
     resume: bool = False,
 ) -> TemporalFusionTransformer:
     train_ds = _make_timeseries_dataset(train_df)

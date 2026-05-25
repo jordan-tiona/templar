@@ -4,14 +4,14 @@ import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
 
-from config.settings import BUY_THRESHOLD, SELL_THRESHOLD
+from config.settings import BUY_THRESHOLD, SELL_THRESHOLD, TFT_ENSEMBLE_WEIGHT, XGB_ENSEMBLE_WEIGHT
 
 
 def combine(
     tft_pred: pd.Series,
     xgb_pred: pd.Series,
-    tft_weight: float = 0.6,
-    xgb_weight: float = 0.4,
+    tft_weight: float = TFT_ENSEMBLE_WEIGHT,
+    xgb_weight: float = XGB_ENSEMBLE_WEIGHT,
 ) -> pd.Series:
     """
     Blend predictions into a single score in [0, 1].
