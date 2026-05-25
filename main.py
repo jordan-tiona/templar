@@ -170,9 +170,15 @@ def cmd_train(args):
 
 def cmd_run(args):
     from signals import generate_signals
-    from execution import execute_signals
+    from execution import execute_signals, get_client
     from data import fetch_bars
     from data.screener import get_watchlist
+
+    if not args.dry:
+        clock = get_client().get_clock()
+        if not clock.is_open:
+            log.info("Market is closed (next open: %s) — skipping order execution.", clock.next_open)
+            return
 
     watchlist = get_watchlist()
 
