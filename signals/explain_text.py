@@ -84,7 +84,7 @@ def add_summaries(
     explain: dict[str, dict],
     model: str = OLLAMA_MODEL,
     max_workers: int = 4,
-    timeout: int = 30,
+    timeout: int = 60,
 ) -> None:
     """Enrich each entry in explain with a plain-English 'summary' field (in-place).
 
@@ -93,12 +93,17 @@ def add_summaries(
     if not explain:
         return
 
-    # Probe Ollama before spinning up the pool to avoid a cascade of connection errors.
+    # Probe Ollama and warm up the model before spinning up the worker pool.
+    # Without this, the first batch of concurrent requests all hit a cold model
+    # and time out before it finishes loading into VRAM.
     try:
         requests.get(OLLAMA_URL.rsplit("/", 1)[0], timeout=3)
+        requests.post(OLLAMA_URL, json={"model": model, "prompt": ".", "stream": False}, timeout=60)
     except requests.exceptions.ConnectionError:
         log.warning("Ollama not reachable — skipping plain-English summaries")
         return
+    except Exception:
+        pass  # warm-up failure is non-fatal; workers will retry
 
     log.info(
         "Generating plain-English summaries for %d symbols via Ollama (%s, %d workers)",

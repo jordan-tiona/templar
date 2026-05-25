@@ -267,9 +267,11 @@ def interpret(
     raw_out = model.predict(loader, mode="raw")[0]
     interp = model.interpret_output(raw_out, reduction="mean")
 
-    # Encoder variable importances
+    # Encoder variable importances — flatten any extra batch/head dims
     var_names = pred_ds.time_varying_unknown_reals
     enc_imp = interp["encoder_variables"].numpy()
+    while enc_imp.ndim > 1:
+        enc_imp = enc_imp.mean(axis=0)
     if len(enc_imp) > len(var_names):
         enc_imp = enc_imp[-len(var_names):]
     variable_importance = sorted(
@@ -278,9 +280,9 @@ def interpret(
         reverse=True,
     )
 
-    # Attention weights: (encoder_len,) or (decoder_len, encoder_len) → mean over decoder
+    # Attention weights — reduce any shape to 1-D by averaging leading dims
     att = interp["attention"].numpy()
-    if att.ndim == 2:
+    while att.ndim > 1:
         att = att.mean(axis=0)
 
     return {"variable_importance": variable_importance, "attention": att.tolist()}
