@@ -265,11 +265,25 @@ def interpret(
     loader = pred_ds.to_dataloader(train=False, batch_size=1, num_workers=0)
 
     import torch as _torch
-    raw_out = model.predict(loader, mode="raw")[0]
 
-    # Bypass interpret_output — it assumes a specific batch-dim shape that
-    # pytorch-forecasting doesn't guarantee after prediction aggregation.
-    # Instead extract tensors directly and average down to 1-D.
+    # Call forward() directly — predict(mode="raw")[0] returns a plain Tensor
+    # in this pytorch-forecasting version, not the full output dict we need.
+    device = next(model.parameters()).device
+
+    def _to_device(obj):
+        if isinstance(obj, _torch.Tensor):
+            return obj.to(device)
+        if isinstance(obj, (list, tuple)):
+            return type(obj)(_to_device(o) for o in obj)
+        return obj
+
+    x, _ = next(iter(loader))
+    x = {k: _to_device(v) for k, v in x.items()}
+
+    model.eval()
+    with _torch.no_grad():
+        out = model(x)
+
     var_names = pred_ds.time_varying_unknown_reals
 
     def _to_1d(tensor) -> "np.ndarray":
@@ -279,7 +293,7 @@ def interpret(
         return arr
 
     # Encoder variable selection weights
-    enc_tensor = raw_out.get("encoder_variables")
+    enc_tensor = out.get("encoder_variables")
     if enc_tensor is not None:
         enc_imp = _to_1d(enc_tensor)
         if len(enc_imp) > len(var_names):
@@ -293,7 +307,7 @@ def interpret(
         variable_importance = []
 
     # Attention weights — key name varies by pytorch-forecasting version
-    att_tensor = raw_out.get("decoder_attention", raw_out.get("attention"))
+    att_tensor = out.get("decoder_attention", out.get("attention"))
     attention = _to_1d(att_tensor).tolist() if att_tensor is not None else []
 
     return {"variable_importance": variable_importance, "attention": attention}
