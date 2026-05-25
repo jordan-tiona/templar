@@ -199,3 +199,31 @@ def predict(model: TemporalFusionTransformer, df: pd.DataFrame, train_df: pd.Dat
     preds = raw_predictions[:, median_idx].numpy()
 
     return pd.Series(preds, index=index.index, name="tft_pred")
+
+
+def predict_cross_section(
+    model: TemporalFusionTransformer,
+    context_df: pd.DataFrame,
+    train_df: pd.DataFrame,
+) -> pd.Series:
+    """
+    One median-quantile prediction per symbol using context_df as encoder history.
+    predict=True mode gives one window per group (symbol), starting from the most
+    recent valid position. Returns a Series indexed by symbol.
+    """
+    import logging as _logging
+    for _name in ["lightning.pytorch.utilities.rank_zero", "lightning.pytorch.accelerators.cuda"]:
+        _logging.getLogger(_name).setLevel(_logging.ERROR)
+
+    train_ds = _make_timeseries_dataset(train_df)
+    pred_ds = _make_timeseries_dataset(context_df, reference_dataset=train_ds, predict=True)
+    loader = pred_ds.to_dataloader(train=False, batch_size=128, num_workers=0)
+
+    result = model.predict(loader, mode="prediction", return_index=True)
+    raw_preds = result[0]   # (n_symbols, n_quantiles)
+    index_df = result[2]    # DataFrame with 'symbol' column from group_ids
+
+    median_idx = raw_preds.shape[1] // 2
+    preds = raw_preds[:, median_idx].numpy()
+
+    return pd.Series(preds, index=index_df["symbol"].values, name="tft_pred")

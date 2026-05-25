@@ -13,6 +13,11 @@ Commands:
 import argparse
 import logging
 import sys
+import warnings
+
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=UserWarning, module="pytorch_forecasting")
+warnings.filterwarnings("ignore", category=UserWarning, module="lightning")
 from datetime import date
 from pathlib import Path
 
@@ -33,6 +38,64 @@ logging.basicConfig(
 )
 log = logging.getLogger("templar")
 log.info("Log file: %s", _LOG_FILE)
+
+
+def _evaluate_models(xgb_model, tft_model, train_df, val_df, test_df, logger):
+    import pandas as pd
+    from scipy.stats import spearmanr
+    from models.dataset import TARGET
+
+    # --- XGBoost: rolling per-date Spearman IC across the full test period ---
+    xgb_m, scaler = xgb_model.load()
+    xgb_preds = xgb_model.predict(xgb_m, scaler, test_df)
+    ev = test_df[["time_idx", TARGET]].copy()
+    ev["pred"] = xgb_preds.values
+    xgb_ic = (
+        ev.groupby("time_idx")
+        .apply(lambda g: spearmanr(g["pred"], g[TARGET]).statistic if len(g) >= 5 else float("nan"))
+        .dropna()
+    )
+    logger.info(
+        "XGBoost test IC | mean: %.4f  ICIR: %.2f  hit: %.0f%%  (%d dates)",
+        xgb_ic.mean(),
+        xgb_ic.mean() / xgb_ic.std() if xgb_ic.std() > 0 else float("nan"),
+        (xgb_ic > 0).mean() * 100,
+        len(xgb_ic),
+    )
+
+    # --- TFT: cross-sectional IC at the test boundary ---
+    # Build a combined train+val context per symbol (time_idx is already continuous).
+    # predict_cross_section uses predict=True mode: one prediction per symbol from the
+    # most recent encoder window, which is the 20-day forward return starting at the
+    # last val date — matching target_return at the first row of each symbol's test split.
+    try:
+        train_val_df = (
+            pd.concat([train_df, val_df])
+            .sort_values(["symbol", "time_idx"])
+            .reset_index(drop=True)
+        )
+        tft = tft_model.load()
+        tft_preds = tft_model.predict_cross_section(tft, train_val_df, train_df)
+
+        first_test_actuals = (
+            test_df.loc[test_df.groupby("symbol")["time_idx"].idxmin(), ["symbol", TARGET]]
+            .set_index("symbol")[TARGET]
+        )
+        common = tft_preds.dropna().index.intersection(first_test_actuals.dropna().index)
+
+        if len(common) >= 5:
+            ic = spearmanr(tft_preds[common], first_test_actuals[common]).statistic
+            spread = tft_preds[common].std()
+            logger.info(
+                "TFT spot IC (test boundary) | IC: %.4f  pred-spread: %.4f  (%d symbols)",
+                ic, spread, len(common),
+            )
+            if spread < 0.01:
+                logger.warning("TFT pred spread is near zero — model may not be differentiating symbols")
+        else:
+            logger.warning("TFT spot IC: too few common symbols (%d) to evaluate", len(common))
+    except Exception as e:
+        logger.warning("TFT evaluation failed: %s", e)
 
 
 def cmd_fetch(args):
@@ -79,6 +142,8 @@ def cmd_train(args):
     tft_model.train(train_df, val_df)
 
     log.info("--- Training complete ---")
+    log.info("--- Evaluating on held-out test split ---")
+    _evaluate_models(xgb_model, tft_model, train_df, val_df, test_df, log)
 
 
 def cmd_run(args):
