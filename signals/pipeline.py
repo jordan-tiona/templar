@@ -190,7 +190,9 @@ def generate_signals(
         try:
             tft_interp = tft_model.interpret(tft, inp["df"])
         except Exception as e:
-            log.warning("TFT interpretation failed for %s: %s", sym, e)
+            import traceback
+            log.warning("TFT interpretation failed for %s: %s\n%s", sym, e, traceback.format_exc())
+            break  # one full traceback is enough
 
         try:
             explain[sym] = _compute_explain(
