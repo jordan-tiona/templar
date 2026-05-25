@@ -264,25 +264,36 @@ def interpret(
     pred_ds = _make_timeseries_dataset(df_t, reference_dataset=train_ds, predict=True)
     loader = pred_ds.to_dataloader(train=False, batch_size=1, num_workers=0)
 
+    import torch as _torch
     raw_out = model.predict(loader, mode="raw")[0]
-    interp = model.interpret_output(raw_out, reduction="mean")
 
-    # Encoder variable importances — flatten any extra batch/head dims
+    # Bypass interpret_output — it assumes a specific batch-dim shape that
+    # pytorch-forecasting doesn't guarantee after prediction aggregation.
+    # Instead extract tensors directly and average down to 1-D.
     var_names = pred_ds.time_varying_unknown_reals
-    enc_imp = interp["encoder_variables"].numpy()
-    while enc_imp.ndim > 1:
-        enc_imp = enc_imp.mean(axis=0)
-    if len(enc_imp) > len(var_names):
-        enc_imp = enc_imp[-len(var_names):]
-    variable_importance = sorted(
-        [{"feature": n, "importance": float(v)} for n, v in zip(var_names, enc_imp)],
-        key=lambda x: x["importance"],
-        reverse=True,
-    )
 
-    # Attention weights — reduce any shape to 1-D by averaging leading dims
-    att = interp["attention"].numpy()
-    while att.ndim > 1:
-        att = att.mean(axis=0)
+    def _to_1d(tensor) -> "np.ndarray":
+        arr = tensor.detach().cpu().numpy()
+        while arr.ndim > 1:
+            arr = arr.mean(axis=0)
+        return arr
 
-    return {"variable_importance": variable_importance, "attention": att.tolist()}
+    # Encoder variable selection weights
+    enc_tensor = raw_out.get("encoder_variables")
+    if enc_tensor is not None:
+        enc_imp = _to_1d(enc_tensor)
+        if len(enc_imp) > len(var_names):
+            enc_imp = enc_imp[-len(var_names):]
+        variable_importance = sorted(
+            [{"feature": n, "importance": float(v)} for n, v in zip(var_names, enc_imp)],
+            key=lambda x: x["importance"],
+            reverse=True,
+        )
+    else:
+        variable_importance = []
+
+    # Attention weights — key name varies by pytorch-forecasting version
+    att_tensor = raw_out.get("decoder_attention", raw_out.get("attention"))
+    attention = _to_1d(att_tensor).tolist() if att_tensor is not None else []
+
+    return {"variable_importance": variable_importance, "attention": attention}
