@@ -119,6 +119,8 @@ def train(
         log.info("Resuming from checkpoint: %s", resume_ckpt)
     else:
         log.info("Starting TFT training from scratch")
+        for old in MODEL_TFT.glob("*.ckpt"):
+            old.unlink()
 
     # Suppress Lightning's verbose Trainer-init messages (GPU/TPU/litlogger tip).
     # These loggers also have their own handlers that duplicate output when propagate=True.
@@ -171,6 +173,7 @@ def load(checkpoint_path: str | None = None) -> TemporalFusionTransformer:
         if not checkpoints:
             raise FileNotFoundError(f"No TFT checkpoint found in {MODEL_TFT}")
         checkpoint_path = checkpoints[-1]
+    log.info("Loading TFT checkpoint: %s", Path(checkpoint_path).name)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # map_location remaps all tensors to the target device, but torchmetrics
