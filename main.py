@@ -12,10 +12,16 @@ Commands:
 
 import argparse
 import logging
+import os
 import sys
 import warnings
 
+# Suppress C++ / absl log spam from torch (triton-not-found, etc.) before torch is imported
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+os.environ.setdefault("TORCH_CPP_LOG_LEVEL", "ERROR")
+
 warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning, module="pytorch_forecasting")
 warnings.filterwarnings("ignore", category=UserWarning, module="lightning")
 

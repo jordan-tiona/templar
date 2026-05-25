@@ -161,6 +161,7 @@ def train(
         gradient_clip_val=1.0,
         callbacks=[checkpoint_cb, early_stop_cb, EpochLogger()],
         enable_progress_bar=True,
+        enable_model_summary=False,
         num_sanity_val_steps=0,
     )
     trainer.fit(tft, train_loader, val_loader, ckpt_path=resume_ckpt)
