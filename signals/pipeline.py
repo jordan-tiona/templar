@@ -11,6 +11,7 @@ from config.settings import WATCHLIST, SEQUENCE_LENGTH, PREDICTION_HORIZON, DATA
 from data import fetch_bars, fetch_news_sentiment, build_features
 from models import tft as tft_model, xgb as xgb_model, ensemble
 from models.dataset import add_target, TIME_VARYING_UNKNOWN
+from .explain_text import add_summaries
 
 log = logging.getLogger(__name__)
 
@@ -207,6 +208,7 @@ def generate_signals(
         except Exception as e:
             log.error("Failed to compute explain data for %s: %s", sym, e)
 
+    add_summaries(explain)
     _save(result, explain)
 
     return result

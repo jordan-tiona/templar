@@ -179,6 +179,22 @@ export default function ExplainPanel({ symbol, data, loading, onClose }: Props) 
 
         {!loading && data && (
           <>
+            {/* Plain-English summary */}
+            {data.summary && (
+              <div style={{
+                margin: '14px 20px 0',
+                padding: '12px 14px',
+                background: 'rgba(99,102,241,0.08)',
+                border: '1px solid rgba(99,102,241,0.25)',
+                borderRadius: 8,
+                fontSize: 13,
+                lineHeight: 1.6,
+                color: 'var(--text)',
+              }}>
+                {data.summary}
+              </div>
+            )}
+
             {/* Model predictions */}
             <div style={{ display: 'flex', borderBottom: '1px solid var(--border)' }}>
               {[

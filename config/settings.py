@@ -64,6 +64,10 @@ TFT_DROPOUT = 0.5              # increased from 0.3
 TFT_ENSEMBLE_WEIGHT = 0.0
 XGB_ENSEMBLE_WEIGHT = 1.0
 
+# Ollama plain-English summaries
+OLLAMA_URL   = "http://localhost:11434/api/generate"
+OLLAMA_MODEL = "llama3.2:3b"   # change to e.g. "qwen2.5:7b" for higher quality
+
 # Signal thresholds
 BUY_THRESHOLD = 0.6        # ensemble confidence to trigger buy
 SELL_THRESHOLD = 0.4       # below this triggers sell

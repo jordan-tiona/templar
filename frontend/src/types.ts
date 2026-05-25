@@ -57,6 +57,7 @@ export interface ExplainData {
   xgb_bias: number
   snapshot: Record<string, number | null>
   tft_interpretation?: TftInterpretation | null
+  summary?: string | null
 }
 
 export interface HistoryEntry {
