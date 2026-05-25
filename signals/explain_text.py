@@ -42,9 +42,9 @@ def _build_prompt(sym: str, d: dict) -> str:
     if rsi is not None:
         snap_lines.append(f"  - RSI 14: {rsi:.1f}")
     if ret1d is not None:
-        snap_lines.append(f"  - 1d return: {ret1d * 100:+.2f}%")
+        snap_lines.append(f"  - 1d return: {ret1d * 100:+.1f}%")
     if ret5d is not None:
-        snap_lines.append(f"  - 5d return: {ret5d * 100:+.2f}%")
+        snap_lines.append(f"  - 5d return: {ret5d * 100:+.1f}%")
     if sentiment is not None and news_count:
         snap_lines.append(f"  - News sentiment: {sentiment:.3f} ({int(news_count)} articles)")
 
@@ -54,8 +54,8 @@ def _build_prompt(sym: str, d: dict) -> str:
         f"Be specific — mention actual numbers from the data. "
         f"Do not use bullet points, headers, or any preamble.\n\n"
         f"Signal: {signal} (ensemble score {score:.0%})\n"
-        f"XGBoost predicted return: {xgb_pred * 100:+.2f}%\n"
-        f"TFT predicted return: {tft_pred * 100:+.2f}%\n\n"
+        f"XGBoost predicted return: {xgb_pred * 100:+.1f}%\n"
+        f"TFT predicted return: {tft_pred * 100:+.1f}%\n\n"
         f"Top model drivers (SHAP):\n{shap_lines}\n\n"
         f"Market snapshot:\n" + "\n".join(snap_lines) + att_note
     )
