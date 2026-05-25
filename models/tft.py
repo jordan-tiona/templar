@@ -117,6 +117,16 @@ def train(
     else:
         log.info("Starting TFT training from scratch")
 
+    # Suppress Lightning's verbose Trainer-init messages (GPU/TPU/litlogger tip).
+    # These loggers also have their own handlers that duplicate output when propagate=True.
+    import logging as _logging
+    for _name in (
+        "lightning.pytorch.utilities.rank_zero",
+        "lightning.pytorch.accelerators.cuda",
+        "lightning.pytorch.accelerators.mps",
+    ):
+        _logging.getLogger(_name).setLevel(_logging.WARNING)
+
     tft = TemporalFusionTransformer.from_dataset(
         train_ds,
         learning_rate=learning_rate,

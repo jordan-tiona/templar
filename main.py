@@ -18,6 +18,12 @@ import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=UserWarning, module="pytorch_forecasting")
 warnings.filterwarnings("ignore", category=UserWarning, module="lightning")
+
+# Windows console defaults to cp1252; re-encode to UTF-8 so emoji in third-party
+# log messages don't crash the StreamHandler.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 from datetime import date
 from pathlib import Path
 
@@ -25,7 +31,7 @@ _LOG_DIR = Path(__file__).parent / "logs"
 _LOG_DIR.mkdir(exist_ok=True)
 _LOG_FILE = _LOG_DIR / f"daily_{date.today()}.log"
 
-_file_handler = logging.FileHandler(_LOG_FILE)
+_file_handler = logging.FileHandler(_LOG_FILE, encoding="utf-8")
 _file_handler.setFormatter(logging.Formatter(
     "%(asctime)s %(levelname)s %(name)s |%(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
@@ -36,6 +42,16 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
     handlers=[logging.StreamHandler(sys.stdout), _file_handler],
 )
+
+# Suppress Lightning/pytorch-forecasting chatter. These loggers add their own
+# handlers AND propagate to root, causing duplicate lines at two different formats.
+for _noisy in (
+    "lightning.pytorch.utilities.rank_zero",
+    "lightning.pytorch.accelerators.cuda",
+    "lightning.pytorch.accelerators.mps",
+    "pytorch_forecasting",
+):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
 log = logging.getLogger("templar")
 log.info("Log file: %s", _LOG_FILE)
 
