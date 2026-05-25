@@ -113,7 +113,7 @@ def _evaluate_models(xgb_model, tft_model, train_df, val_df, test_df, logger):
                 ic, spread, len(common),
             )
             if spread < 0.01:
-                logger.warning("TFT pred spread is near zero — model may not be differentiating symbols")
+                logger.warning("TFT pred spread is near zero - model may not be differentiating symbols")
         else:
             logger.warning("TFT spot IC: too few common symbols (%d) to evaluate", len(common))
     except Exception as e:
@@ -177,7 +177,7 @@ def cmd_run(args):
     if not args.dry:
         clock = get_client().get_clock()
         if not clock.is_open:
-            log.info("Market is closed (next open: %s) — skipping order execution.", clock.next_open)
+            log.info("Market is closed (next open: %s) - skipping order execution.", clock.next_open)
             return
 
     watchlist = get_watchlist()

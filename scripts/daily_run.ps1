@@ -35,7 +35,7 @@ if ($day -eq "Saturday" -or $day -eq "Sunday") {
 
 # 1. Fetch latest bars and sentiment
 Log "--- Phase 1: Fetching market data ---"
-& $Python (Join-Path $Root "main.py") fetch 2>&1 | Tee-Object -Append -FilePath $LogFile
+& $Python (Join-Path $Root "main.py") fetch 2>&1 | Tee-Object -Append -FilePath $LogFile -Encoding utf8
 if ($LASTEXITCODE -ne 0) {
     Log "ERROR: fetch failed (exit $LASTEXITCODE)"
     exit 1
@@ -45,7 +45,7 @@ if ($LASTEXITCODE -ne 0) {
 Log "--- Phase 2: Generating signals and executing orders ---"
 $MainPy = Join-Path $Root "main.py"
 $runArgs = if ($Dry) { @("run", "--dry") } else { @("run") }
-& $Python $MainPy $runArgs 2>&1 | Tee-Object -Append -FilePath $LogFile
+& $Python $MainPy $runArgs 2>&1 | Tee-Object -Append -FilePath $LogFile -Encoding utf8
 if ($LASTEXITCODE -ne 0) {
     Log "ERROR: run failed (exit $LASTEXITCODE)"
     exit 1
