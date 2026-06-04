@@ -1,12 +1,19 @@
-"""News sentiment scoring via GDELT DOC 2.0 timeline API + FinBERT (kept for future use)."""
+"""News sentiment scoring via GDELT DOC 2.0 timeline API + FinBERT (kept for future use).
 
+StockTwits social sentiment is collected daily and cached as a separate signal.
+It is not used in model training until sufficient history has accumulated (~3 months).
+At inference it acts as a filter: strong contrary social sentiment can suppress a signal.
+"""
+
+import json
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, date, timedelta
 from functools import lru_cache
 
 import pandas as pd
 import requests
+import yfinance as yf
 from transformers import pipeline
 
 from config.settings import DATA_CACHE
@@ -14,23 +21,39 @@ from config.settings import DATA_CACHE
 log = logging.getLogger(__name__)
 
 _GDELT_BASE = "https://api.gdeltproject.org/api/v2/doc/doc"
+_COMPANY_NAME_CACHE = DATA_CACHE / "company_names.json"
 
-# Ticker → company name for GDELT queries
-_COMPANY_NAMES: dict[str, str] = {
-    "AAPL": "Apple",
-    "MSFT": "Microsoft",
-    "GOOGL": "Google",
-    "AMZN": "Amazon",
-    "META": "Meta",
-    "JPM": "JPMorgan",
-    "BAC": "Bank of America",
-    "GS": "Goldman Sachs",
-    "XOM": "ExxonMobil",
-    "CVX": "Chevron",
-    "JNJ": "Johnson Johnson",
-    "UNH": "UnitedHealth",
-    "SPY": "S&P 500",
-}
+
+def _load_company_name_cache() -> dict[str, str]:
+    if _COMPANY_NAME_CACHE.exists():
+        with open(_COMPANY_NAME_CACHE) as f:
+            return json.load(f)
+    return {}
+
+
+def _save_company_name_cache(names: dict[str, str]) -> None:
+    with open(_COMPANY_NAME_CACHE, "w") as f:
+        json.dump(names, f, indent=2)
+
+
+def _company_name(symbol: str) -> str:
+    """Return a human-readable company name for GDELT queries, cached to disk."""
+    cache = _load_company_name_cache()
+    if symbol in cache:
+        return cache[symbol]
+    try:
+        info = yf.Ticker(symbol).info
+        name = info.get("longName") or info.get("shortName") or symbol
+        # Strip common suffixes that add noise to news queries
+        for suffix in (", Inc.", " Inc.", ", Corp.", " Corp.", " Corporation", ", Ltd.", " Ltd.", " Group"):
+            name = name.replace(suffix, "")
+        name = name.strip()
+    except Exception:
+        name = symbol
+    cache[symbol] = name
+    _save_company_name_cache(cache)
+    log.debug("Resolved company name: %s -> %s", symbol, name)
+    return name
 
 
 # ---------------------------------------------------------------------------
@@ -134,7 +157,7 @@ def fetch_news_sentiment(
     if not force_refresh and cache_path.exists():
         return pd.read_parquet(cache_path)
 
-    company = _COMPANY_NAMES.get(symbol, symbol)
+    company = _company_name(symbol)
     query = f'"{company} stock"'
 
     end = datetime.utcnow()
@@ -181,3 +204,182 @@ def fetch_all_sentiment(symbols: list[str]) -> dict[str, pd.DataFrame]:
         if i < len(symbols) - 1:
             time.sleep(3)  # pause between symbols to avoid sustained rate limiting
     return results
+
+
+# ---------------------------------------------------------------------------
+# StockTwits social sentiment
+# ---------------------------------------------------------------------------
+
+_STOCKTWITS_BASE = "https://api.stocktwits.com/api/2/streams/symbol"
+_ST_BACKFILL_PAGES = 10  # ~300 messages max per symbol on initial run
+# Minimum labeled-message count before bullish_ratio is considered reliable.
+ST_MIN_LABELED = 5
+
+
+def _stocktwits_page(
+    symbol: str,
+    max_id: int | None = None,
+    since_id: int | None = None,
+) -> dict:
+    url = f"{_STOCKTWITS_BASE}/{symbol}.json"
+    params: dict = {"limit": 30}
+    if max_id is not None:
+        params["max"] = max_id
+    if since_id is not None:
+        params["since"] = since_id
+    try:
+        resp = requests.get(url, params=params, timeout=10)
+        resp.raise_for_status()
+        return resp.json()
+    except requests.RequestException as exc:
+        log.warning("StockTwits request failed for %s: %s", symbol, exc)
+        return {}
+
+
+def _parse_stocktwits_messages(messages: list[dict]) -> pd.DataFrame:
+    rows = []
+    for msg in messages:
+        try:
+            dt = datetime.strptime(msg["created_at"], "%Y-%m-%dT%H:%M:%SZ").date()
+        except (KeyError, ValueError):
+            continue
+        sentiment_raw = (msg.get("entities") or {}).get("sentiment") or {}
+        label = sentiment_raw.get("basic", "") if isinstance(sentiment_raw, dict) else ""
+        rows.append({
+            "date": dt,
+            "msg_id": int(msg["id"]),
+            "bullish": 1 if label == "Bullish" else 0,
+            "bearish": 1 if label == "Bearish" else 0,
+        })
+    return pd.DataFrame(rows) if rows else pd.DataFrame(
+        columns=["date", "msg_id", "bullish", "bearish"]
+    )
+
+
+def _aggregate_stocktwits(raw: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate raw message rows into daily [stocktwits_bullish_ratio, stocktwits_mention_count]."""
+    raw = raw.drop_duplicates("msg_id").copy()
+    raw["date"] = pd.to_datetime(raw["date"])
+    daily = raw.groupby("date").agg(
+        stocktwits_mention_count=("msg_id", "count"),
+        _bullish=("bullish", "sum"),
+        _bearish=("bearish", "sum"),
+    )
+    labeled = daily["_bullish"] + daily["_bearish"]
+    # Where too few messages are labeled, default ratio to neutral 0.5
+    daily["stocktwits_bullish_ratio"] = (
+        daily["_bullish"] / labeled.where(labeled >= ST_MIN_LABELED)
+    ).fillna(0.5)
+    return daily[["stocktwits_bullish_ratio", "stocktwits_mention_count"]].sort_index()
+
+
+def fetch_stocktwits_sentiment(
+    symbol: str,
+    force_refresh: bool = False,
+) -> pd.DataFrame:
+    """
+    Return DataFrame indexed by date with [stocktwits_bullish_ratio, stocktwits_mention_count].
+
+    First call: paginates back ~300 messages for initial history.
+    Subsequent calls: incremental — only fetches messages since last run.
+    Results are cached to data/cache/sentiment_stocktwits_{symbol}.parquet.
+    """
+    cache_path = DATA_CACHE / f"sentiment_stocktwits_{symbol}.parquet"
+    cursor_path = DATA_CACHE / f"stocktwits_cursor_{symbol}.json"
+
+    existing_raw: pd.DataFrame | None = None
+    since_id: int | None = None
+
+    if not force_refresh and cache_path.exists() and cursor_path.exists():
+        # Load raw message-level cache (stored alongside aggregated parquet)
+        raw_cache_path = DATA_CACHE / f"stocktwits_raw_{symbol}.parquet"
+        if raw_cache_path.exists():
+            existing_raw = pd.read_parquet(raw_cache_path)
+        with open(cursor_path) as f:
+            since_id = json.load(f).get("since_id")
+
+    new_message_rows: list[pd.DataFrame] = []
+    new_since_id: int | None = None
+
+    if since_id is not None:
+        # Incremental update: pull messages newer than last seen
+        data = _stocktwits_page(symbol, since_id=since_id)
+        messages = data.get("messages", [])
+        if messages:
+            new_message_rows.append(_parse_stocktwits_messages(messages))
+            new_since_id = data.get("cursor", {}).get("since")
+        else:
+            new_since_id = since_id  # nothing new
+    else:
+        # Initial backfill: paginate backward up to _ST_BACKFILL_PAGES pages
+        max_id: int | None = None
+        for page in range(_ST_BACKFILL_PAGES):
+            data = _stocktwits_page(symbol, max_id=max_id)
+            messages = data.get("messages", [])
+            if not messages:
+                break
+            parsed = _parse_stocktwits_messages(messages)
+            new_message_rows.append(parsed)
+            if page == 0:
+                new_since_id = data.get("cursor", {}).get("since")
+            max_id = data.get("cursor", {}).get("max")
+            if not max_id:
+                break
+            time.sleep(0.5)
+
+    # Merge with existing raw rows and re-aggregate
+    all_raw_parts = ([existing_raw] if existing_raw is not None else []) + new_message_rows
+    if not all_raw_parts:
+        log.warning("No StockTwits data returned for %s", symbol)
+        return pd.DataFrame(columns=["stocktwits_bullish_ratio", "stocktwits_mention_count"])
+
+    all_raw = pd.concat(all_raw_parts, ignore_index=True)
+
+    # Persist raw rows for future incremental merges
+    raw_cache_path = DATA_CACHE / f"stocktwits_raw_{symbol}.parquet"
+    all_raw.to_parquet(raw_cache_path)
+
+    # Persist cursor for next incremental run
+    if new_since_id is not None:
+        with open(cursor_path, "w") as f:
+            json.dump({"since_id": new_since_id}, f)
+
+    daily = _aggregate_stocktwits(all_raw)
+    daily.to_parquet(cache_path)
+    log.info("StockTwits for %s: %d days cached (%d messages)", symbol, len(daily), len(all_raw))
+    return daily
+
+
+def collect_all_stocktwits(
+    symbols: list[str],
+    force_refresh: bool = False,
+) -> dict[str, pd.DataFrame]:
+    """Collect StockTwits sentiment for all symbols, 1s gap between requests."""
+    results: dict[str, pd.DataFrame] = {}
+    for i, sym in enumerate(symbols):
+        results[sym] = fetch_stocktwits_sentiment(sym, force_refresh=force_refresh)
+        if i < len(symbols) - 1:
+            time.sleep(1)
+    return results
+
+
+def load_stocktwits_today(symbol: str) -> tuple[float, int]:
+    """
+    Return (bullish_ratio, mention_count) for the most recent cached date.
+    Returns (0.5, 0) if no recent data (within 3 calendar days).
+    """
+    cache_path = DATA_CACHE / f"sentiment_stocktwits_{symbol}.parquet"
+    if not cache_path.exists():
+        return 0.5, 0
+    try:
+        df = pd.read_parquet(cache_path)
+        if df.empty:
+            return 0.5, 0
+        latest_date = df.index.max().date()
+        if (date.today() - latest_date).days > 3:
+            return 0.5, 0
+        row = df.loc[df.index.max()]
+        return float(row["stocktwits_bullish_ratio"]), int(row["stocktwits_mention_count"])
+    except Exception as exc:
+        log.debug("StockTwits load failed for %s: %s", symbol, exc)
+        return 0.5, 0

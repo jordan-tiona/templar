@@ -121,13 +121,15 @@ def _evaluate_models(xgb_model, tft_model, train_df, val_df, test_df, logger):
 
 
 def cmd_fetch(args):
-    from data import fetch_bars, fetch_all_sentiment
+    from data import fetch_bars, fetch_all_sentiment, collect_all_stocktwits
     from data.screener import get_watchlist
     watchlist = get_watchlist()
     log.info("Fetching bars for %d symbols...", len(watchlist))
     fetch_bars(watchlist, force_refresh=args.refresh)
-    log.info("Fetching sentiment...")
+    log.info("Fetching GDELT sentiment...")
     fetch_all_sentiment(watchlist)
+    log.info("Collecting StockTwits sentiment...")
+    collect_all_stocktwits(watchlist, force_refresh=args.refresh)
     log.info("Done.")
 
 
@@ -181,6 +183,10 @@ def cmd_run(args):
             return
 
     watchlist = get_watchlist()
+
+    log.info("Collecting StockTwits sentiment (incremental)...")
+    from data import collect_all_stocktwits
+    collect_all_stocktwits(watchlist)
 
     log.info("Generating signals...")
     signals = generate_signals(watchlist)

@@ -108,12 +108,14 @@ def tune(
     def objective(trial: optuna.Trial) -> float:
         params = {
             "n_estimators": trial.suggest_int("n_estimators", 100, 2000),
-            "learning_rate": trial.suggest_float("learning_rate", 1e-3, 0.3, log=True),
-            "max_depth": trial.suggest_int("max_depth", 3, 9),
+            "learning_rate": trial.suggest_float("learning_rate", 1e-3, 0.15, log=True),
+            "max_depth": trial.suggest_int("max_depth", 3, 6),
             "subsample": trial.suggest_float("subsample", 0.5, 1.0),
             "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
-            "min_child_weight": trial.suggest_int("min_child_weight", 1, 10),
+            "min_child_weight": trial.suggest_int("min_child_weight", 2, 10),
             "gamma": trial.suggest_float("gamma", 0.0, 5.0),
+            "reg_lambda": trial.suggest_float("reg_lambda", 1.0, 10.0),
+            "reg_alpha": trial.suggest_float("reg_alpha", 0.0, 2.0),
         }
 
         model = XGBRegressor(

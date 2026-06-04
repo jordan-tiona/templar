@@ -8,7 +8,7 @@ import xgboost as xgb_lib
 from datetime import datetime
 
 from config.settings import WATCHLIST, SEQUENCE_LENGTH, PREDICTION_HORIZON, DATA_CACHE
-from data import fetch_bars, fetch_news_sentiment, build_features
+from data import fetch_bars, fetch_news_sentiment, build_features, load_stocktwits_today
 from models import tft as tft_model, xgb as xgb_model, ensemble
 from models.dataset import add_target, TIME_VARYING_UNKNOWN
 from .explain_text import add_summaries
@@ -208,7 +208,52 @@ def generate_signals(
         except Exception as e:
             log.error("Failed to compute explain data for %s: %s", sym, e)
 
+    result = _apply_stocktwits_filter(result)
+
     add_summaries(explain)
     _save(result, explain)
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# StockTwits inference filter (Option B)
+# ---------------------------------------------------------------------------
+# Suppresses signals when fresh social sentiment strongly contradicts the model.
+# Thresholds are intentionally conservative: only act on clear contrary signals
+# with enough volume to be meaningful.
+_ST_BULLISH_SUPPRESS_THRESHOLD = 0.30   # ratio below which BUY is suppressed
+_ST_BEARISH_SUPPRESS_THRESHOLD = 0.70   # ratio above which SHORT is suppressed
+_ST_MIN_MENTIONS = 5                    # ignore if fewer messages than this today
+
+
+def _apply_stocktwits_filter(result: pd.DataFrame) -> pd.DataFrame:
+    """
+    Suppress BUY/SHORT signals where fresh StockTwits sentiment strongly disagrees.
+    Modifies 'signal' in-place; does nothing if no recent cache exists for a symbol.
+    """
+    result = result.copy()
+    suppressed: list[str] = []
+
+    for sym in result.index:
+        signal = result.at[sym, "signal"]
+        if signal not in ("BUY", "SHORT"):
+            continue
+
+        bullish_ratio, mention_count = load_stocktwits_today(sym)
+        if mention_count < _ST_MIN_MENTIONS:
+            continue  # not enough data to act on
+
+        if signal == "BUY" and bullish_ratio < _ST_BULLISH_SUPPRESS_THRESHOLD:
+            result.at[sym, "signal"] = "HOLD"
+            suppressed.append(f"{sym} BUY→HOLD (ratio={bullish_ratio:.2f}, n={mention_count})")
+        elif signal == "SHORT" and bullish_ratio > _ST_BEARISH_SUPPRESS_THRESHOLD:
+            result.at[sym, "signal"] = "HOLD"
+            suppressed.append(f"{sym} SHORT→HOLD (ratio={bullish_ratio:.2f}, n={mention_count})")
+
+    if suppressed:
+        log.info("StockTwits filter suppressed %d signal(s):", len(suppressed))
+        for s in suppressed:
+            log.info("  -- %s", s)
 
     return result
