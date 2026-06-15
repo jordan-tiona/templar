@@ -2,7 +2,6 @@
 Templar Dashboard API.
 
 Run with:
-    cd /home/tora/templar
     uvicorn api.main:app --reload --port 8000
 """
 
