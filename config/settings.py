@@ -54,7 +54,7 @@ VAL_SPLIT = 0.15
 WATCHLIST_PATH = ROOT / "watchlist.json"
 
 # Model — TFT
-TFT_LEARNING_RATE = 3e-4
+TFT_LEARNING_RATE = 1e-4       # reduced from 3e-4; val_loss was peaking within ~4 epochs
 TFT_HIDDEN_SIZE = 32           # reduced from 96; model was too large for 40K rows
 TFT_ATTENTION_HEADS = 2        # reduced from 4
 TFT_DROPOUT = 0.5              # increased from 0.3

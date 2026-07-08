@@ -75,10 +75,16 @@ def _make_timeseries_dataset(
         max_prediction_length=PREDICTION_HORIZON,
         static_categoricals=STATIC_CATEGORICALS,
         time_varying_unknown_reals=feature_cols,
-        target_normalizer=GroupNormalizer(groups=STATIC_CATEGORICALS, transformation="softplus"),
+        # No transformation: target is a cross-sectional z-score (symmetric around 0).
+        # softplus is for strictly-positive targets and NaNs out negative values,
+        # which silently discarded ~half the training signal.
+        target_normalizer=GroupNormalizer(groups=STATIC_CATEGORICALS),
         add_relative_time_idx=True,
         add_target_scales=True,
         add_encoder_length=True,
+        # Purged split boundaries leave 20-row gaps in time_idx per symbol;
+        # without this the dataset constructor rejects non-contiguous groups.
+        allow_missing_timesteps=True,
     )
 
 
@@ -92,7 +98,7 @@ def train(
     train_df: pd.DataFrame,
     val_df: pd.DataFrame,
     max_epochs: int = 50,
-    batch_size: int = 64,
+    batch_size: int = 128,
     learning_rate: float = TFT_LEARNING_RATE,
     hidden_size: int = TFT_HIDDEN_SIZE,
     attention_head_size: int = TFT_ATTENTION_HEADS,
@@ -139,7 +145,7 @@ def train(
         hidden_size=hidden_size,
         attention_head_size=attention_head_size,
         dropout=dropout,
-        hidden_continuous_size=48,
+        hidden_continuous_size=16,  # was 48 — larger than hidden_size (32), inverted proportions
         loss=QuantileLoss(),
         log_interval=10,
         reduce_on_plateau_patience=4,
@@ -217,6 +223,41 @@ def predict(model: TemporalFusionTransformer, df: pd.DataFrame, train_df: pd.Dat
     preds = raw_predictions[:, median_idx].numpy()
 
     return pd.Series(preds, index=index.index, name="tft_pred")
+
+
+def predict_window(
+    model: TemporalFusionTransformer,
+    full_df: pd.DataFrame,
+    train_df: pd.DataFrame,
+    min_time_idx: int,
+) -> pd.DataFrame:
+    """
+    One-step-ahead median prediction for every (symbol, time_idx) at or after
+    min_time_idx. full_df must include enough history before min_time_idx to
+    fill the encoder. Returns a DataFrame with symbol, time_idx, tft_pred —
+    suitable for per-date IC evaluation over a whole test window.
+    """
+    import logging as _logging
+    for _name in ["lightning.pytorch.utilities.rank_zero", "lightning.pytorch.accelerators.cuda"]:
+        _logging.getLogger(_name).setLevel(_logging.ERROR)
+
+    train_ds = _make_timeseries_dataset(train_df)
+    pred_ds = TimeSeriesDataSet.from_dataset(
+        train_ds, full_df,
+        predict=False, stop_randomization=True,
+        min_prediction_idx=min_time_idx,
+    )
+    loader = pred_ds.to_dataloader(train=False, batch_size=128, num_workers=0)
+
+    result = model.predict(loader, mode="prediction", return_index=True)
+    # result[0]: (n_windows, prediction_length); column 0 is the forecast for
+    # the window's first decoder step, i.e. the target at the indexed time_idx.
+    preds = result[0][:, 0].cpu().numpy()
+    index_df = result[2]  # has time_idx (first decoder step) and symbol
+
+    out = index_df[["symbol", "time_idx"]].copy()
+    out["tft_pred"] = preds
+    return out
 
 
 def predict_cross_section(

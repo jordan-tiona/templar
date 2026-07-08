@@ -1,10 +1,14 @@
 """Ensemble: combine TFT and XGBoost predictions into a single signal score."""
 
+import logging
+
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
 
 from config.settings import BUY_THRESHOLD, SELL_THRESHOLD, TFT_ENSEMBLE_WEIGHT, XGB_ENSEMBLE_WEIGHT
+
+log = logging.getLogger(__name__)
 
 
 def combine(
@@ -34,15 +38,30 @@ def combine(
     return score
 
 
-def to_signals(score: pd.Series) -> pd.Series:
+def to_signals(score: pd.Series, max_side_frac: float = 0.2) -> pd.Series:
     """
     Map ensemble score to BUY / SHORT / HOLD.
     Shorts the bottom N symbols to match long count (market-neutral).
+
+    Rails (added after 2026-07-08, when a degenerate model with massive score
+    ties marked 144/148 symbols BUY and then overwrote 140 of them to SHORT):
+    - degenerate score distributions (mostly ties) produce all-HOLD, no trades;
+    - longs are capped at max_side_frac of the universe, highest scores first;
+    - the short pool excludes the BUYs, so shorts can never overwrite longs.
     """
     signals = pd.Series("HOLD", index=score.index, name="signal")
-    buy_mask = score >= BUY_THRESHOLD
-    signals[buy_mask] = "BUY"
-    n_buys = int(buy_mask.sum())
-    if n_buys > 0:
-        signals[score.nsmallest(n_buys).index] = "SHORT"
+
+    if score.nunique() < max(5, len(score) // 2):
+        log.warning(
+            "Degenerate ensemble scores (%d distinct across %d symbols) -- holding everything",
+            score.nunique(), len(score),
+        )
+        return signals
+
+    max_side = max(1, int(len(score) * max_side_frac))
+    buys = score[score >= BUY_THRESHOLD].nlargest(max_side).index
+    signals[buys] = "BUY"
+    if len(buys) > 0:
+        shorts = score.drop(buys).nsmallest(len(buys)).index
+        signals[shorts] = "SHORT"
     return signals

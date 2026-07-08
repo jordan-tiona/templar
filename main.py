@@ -85,37 +85,41 @@ def _evaluate_models(xgb_model, tft_model, train_df, val_df, test_df, logger):
         len(xgb_ic),
     )
 
-    # --- TFT: cross-sectional IC at the test boundary ---
-    # Build a combined train+val context per symbol (time_idx is already continuous).
-    # predict_cross_section uses predict=True mode: one prediction per symbol from the
-    # most recent encoder window, which is the 20-day forward return starting at the
-    # last val date — matching target_return at the first row of each symbol's test split.
+    # --- TFT: rolling per-date Spearman IC across the full test period ---
+    # Same yardstick as XGBoost: one-step-ahead prediction for every test date,
+    # daily cross-sectional rank correlation with the realized target.
     try:
-        train_val_df = (
-            pd.concat([train_df, val_df])
+        tft = tft_model.load()
+        full_df = (
+            pd.concat([train_df, val_df, test_df])
             .sort_values(["symbol", "time_idx"])
             .reset_index(drop=True)
         )
-        tft = tft_model.load()
-        tft_preds = tft_model.predict_cross_section(tft, train_val_df, train_df)
+        first_test_idx = int(test_df["time_idx"].min())
+        pred_df = tft_model.predict_window(tft, full_df, train_df, first_test_idx)
 
-        first_test_actuals = (
-            test_df.loc[test_df.groupby("symbol")["time_idx"].idxmin(), ["symbol", TARGET]]
-            .set_index("symbol")[TARGET]
+        merged = pred_df.merge(
+            test_df[["symbol", "time_idx", TARGET]],
+            on=["symbol", "time_idx"], how="inner",
         )
-        common = tft_preds.dropna().index.intersection(first_test_actuals.dropna().index)
-
-        if len(common) >= 5:
-            ic = spearmanr(tft_preds[common], first_test_actuals[common]).statistic
-            spread = tft_preds[common].std()
+        tft_ic = (
+            merged.groupby("time_idx")
+            .apply(lambda g: spearmanr(g["tft_pred"], g[TARGET]).statistic if len(g) >= 5 else float("nan"))
+            .dropna()
+        )
+        if len(tft_ic) > 0:
             logger.info(
-                "TFT spot IC (test boundary) | IC: %.4f  pred-spread: %.4f  (%d symbols)",
-                ic, spread, len(common),
+                "TFT test IC | mean: %.4f  ICIR: %.2f  hit: %.0f%%  (%d dates)",
+                tft_ic.mean(),
+                tft_ic.mean() / tft_ic.std() if tft_ic.std() > 0 else float("nan"),
+                (tft_ic > 0).mean() * 100,
+                len(tft_ic),
             )
+            spread = merged["tft_pred"].std()
             if spread < 0.01:
                 logger.warning("TFT pred spread is near zero -- model may not be differentiating symbols")
         else:
-            logger.warning("TFT spot IC: too few common symbols (%d) to evaluate", len(common))
+            logger.warning("TFT test IC: no evaluable dates")
     except Exception as e:
         logger.warning("TFT evaluation failed: %s", e)
 

@@ -23,7 +23,8 @@ TIME_VARYING_UNKNOWN = [
     "ATRr_14",
     # Volume
     "OBV", "VWAP_D",
-    # Sentiment
+    # Sentiment: FinBERT-scored Benzinga headlines via Alpaca News API,
+    # ~5 years of history backfilled 2026-07-08, updated incrementally daily.
     "sentiment_mean", "sentiment_count",
 ]
 
@@ -75,16 +76,24 @@ def train_val_test_split(
     df: pd.DataFrame,
     train_frac: float = 0.70,
     val_frac: float = 0.15,
+    purge: int = PREDICTION_HORIZON,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Split by time_idx within each symbol (no lookahead leakage)."""
+    """Split by time_idx within each symbol (no lookahead leakage).
+
+    The last `purge` rows of the train and val segments are dropped: the
+    target is a `purge`-day forward return, so those rows' targets are
+    computed from prices inside the following segment and would leak
+    across the boundary, flattering val_loss right where early stopping
+    and checkpoint selection read it.
+    """
     splits = []
     for sym, grp in df.groupby("symbol"):
         n = len(grp)
         t1 = int(n * train_frac)
         t2 = int(n * (train_frac + val_frac))
-        train = grp.iloc[:t1].copy()
+        train = grp.iloc[:max(t1 - purge, 0)].copy()
         train["split"] = "train"
-        val = grp.iloc[t1:t2].copy()
+        val = grp.iloc[t1:max(t2 - purge, t1)].copy()
         val["split"] = "val"
         test = grp.iloc[t2:].copy()
         test["split"] = "test"

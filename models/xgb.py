@@ -67,19 +67,17 @@ def train(
             colsample_bytree=colsample_bytree,
         )
 
+    # No early stopping: on a z-scored target, val RMSE is minimized by
+    # predicting ~0, so RMSE-based stopping truncates the model to a couple
+    # of trees. Params are tuned for val IC (see tune()); train to the
+    # tuned n_estimators budget.
     model = XGBRegressor(
         **params,
-        early_stopping_rounds=50,
-        eval_metric="rmse",
         n_jobs=-1,
         random_state=42,
         device="cpu",
     )
-    model.fit(
-        X_train, y_train,
-        eval_set=[(X_val, y_val)],
-        verbose=100,
-    )
+    model.fit(X_train, y_train, verbose=False)
 
     joblib.dump(model, _MODEL_PATH)
     joblib.dump(scaler, _SCALER_PATH)
@@ -105,14 +103,31 @@ def tune(
     X_train = scaler.fit_transform(X_train)
     X_val = scaler.transform(X_val)
 
+    # Optimize mean per-date Spearman IC on validation, not RMSE. On a
+    # cross-sectionally z-scored target, val RMSE is minimized by predicting
+    # ~0 everywhere (early stopping then keeps a 1-3 tree model), which has
+    # nothing to do with the ranking quality the strategy trades on.
+    from scipy.stats import spearmanr
+
+    val_time_idx = val_df["time_idx"].values
+
+    def _val_ic(preds: np.ndarray) -> float:
+        ev = pd.DataFrame({"time_idx": val_time_idx, "pred": preds, "y": y_val})
+        ic = (
+            ev.groupby("time_idx")
+            .apply(lambda g: spearmanr(g["pred"], g["y"]).statistic if len(g) >= 5 else np.nan)
+            .dropna()
+        )
+        return float(ic.mean()) if len(ic) else float("nan")
+
     def objective(trial: optuna.Trial) -> float:
         params = {
-            "n_estimators": trial.suggest_int("n_estimators", 100, 2000),
-            "learning_rate": trial.suggest_float("learning_rate", 1e-3, 0.15, log=True),
-            "max_depth": trial.suggest_int("max_depth", 3, 6),
+            "n_estimators": trial.suggest_int("n_estimators", 100, 1000),
+            "learning_rate": trial.suggest_float("learning_rate", 5e-3, 0.1, log=True),
+            "max_depth": trial.suggest_int("max_depth", 2, 6),
             "subsample": trial.suggest_float("subsample", 0.5, 1.0),
             "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
-            "min_child_weight": trial.suggest_int("min_child_weight", 2, 10),
+            "min_child_weight": trial.suggest_int("min_child_weight", 5, 100),
             "gamma": trial.suggest_float("gamma", 0.0, 5.0),
             "reg_lambda": trial.suggest_float("reg_lambda", 1.0, 10.0),
             "reg_alpha": trial.suggest_float("reg_alpha", 0.0, 2.0),
@@ -120,23 +135,14 @@ def tune(
 
         model = XGBRegressor(
             **params,
-            early_stopping_rounds=50,
-            eval_metric="rmse",
             n_jobs=-1,
             random_state=42,
             device="cpu",
         )
-        model.fit(
-            X_train, y_train,
-            eval_set=[(X_val, y_val)],
-            verbose=False,
-        )
+        model.fit(X_train, y_train, verbose=False)
+        return _val_ic(model.predict(X_val))
 
-        # Best val RMSE recorded by XGBoost during early stopping
-        val_rmse = model.best_score
-        return float(val_rmse)
-
-    study = optuna.create_study(direction="minimize")
+    study = optuna.create_study(direction="maximize")
     study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
 
     best_params = study.best_params
