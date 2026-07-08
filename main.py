@@ -130,7 +130,7 @@ def cmd_fetch(args):
     watchlist = get_watchlist()
     log.info("Fetching bars for %d symbols...", len(watchlist))
     fetch_bars(watchlist, force_refresh=args.refresh)
-    log.info("Fetching GDELT sentiment...")
+    log.info("Fetching news sentiment (Alpaca/Benzinga + FinBERT)...")
     fetch_all_sentiment(watchlist)
     log.info("Done.")
 

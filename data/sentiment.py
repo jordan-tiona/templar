@@ -1,4 +1,7 @@
-"""News sentiment scoring via GDELT DOC 2.0 timeline API + FinBERT (kept for future use).
+"""News sentiment: Alpaca News API (Benzinga, history to ~2015) scored with FinBERT.
+
+Daily per-symbol aggregates are cached to data/cache/sentiment_news_{symbol}.parquet
+and updated incrementally. Articles are bucketed by their US/Eastern calendar date.
 
 StockTwits social sentiment is collected daily and cached as a separate signal.
 It is not used in model training until sufficient history has accumulated (~3 months).
@@ -8,56 +11,24 @@ At inference it acts as a filter: strong contrary social sentiment can suppress 
 import json
 import logging
 import time
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from functools import lru_cache
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import requests
-import yfinance as yf
 from transformers import pipeline
 
-from config.settings import DATA_CACHE
+from config.settings import DATA_CACHE, ALPACA_API_KEY, ALPACA_SECRET_KEY
 
 log = logging.getLogger(__name__)
 
-_GDELT_BASE = "https://api.gdeltproject.org/api/v2/doc/doc"
-_COMPANY_NAME_CACHE = DATA_CACHE / "company_names.json"
-
-
-def _load_company_name_cache() -> dict[str, str]:
-    if _COMPANY_NAME_CACHE.exists():
-        with open(_COMPANY_NAME_CACHE) as f:
-            return json.load(f)
-    return {}
-
-
-def _save_company_name_cache(names: dict[str, str]) -> None:
-    with open(_COMPANY_NAME_CACHE, "w") as f:
-        json.dump(names, f, indent=2)
-
-
-def _company_name(symbol: str) -> str:
-    """Return a human-readable company name for GDELT queries, cached to disk."""
-    cache = _load_company_name_cache()
-    if symbol in cache:
-        return cache[symbol]
-    try:
-        info = yf.Ticker(symbol).info
-        name = info.get("longName") or info.get("shortName") or symbol
-        # Strip common suffixes that add noise to news queries
-        for suffix in (", Inc.", " Inc.", ", Corp.", " Corp.", " Corporation", ", Ltd.", " Ltd.", " Group"):
-            name = name.replace(suffix, "")
-        name = name.strip()
-    except Exception:
-        name = symbol
-    cache[symbol] = name
-    _save_company_name_cache(cache)
-    log.debug("Resolved company name: %s -> %s", symbol, name)
-    return name
+_EASTERN = ZoneInfo("America/New_York")
+_NEWS_LOOKBACK_DAYS = 5 * 365
 
 
 # ---------------------------------------------------------------------------
-# FinBERT helpers — kept for potential future use, not called by GDELT path
+# FinBERT helpers
 # ---------------------------------------------------------------------------
 
 @lru_cache(maxsize=1)
@@ -84,65 +55,54 @@ def _score(texts: list[str]) -> list[float]:
 
 
 # ---------------------------------------------------------------------------
-# GDELT helpers
+# Alpaca News API (Benzinga) helpers
 # ---------------------------------------------------------------------------
 
-def _gdelt_chunk(query: str, start: datetime, end: datetime, retries: int = 3) -> pd.DataFrame:
+@lru_cache(maxsize=1)
+def _news_client():
+    from alpaca.data.historical.news import NewsClient
+    return NewsClient(ALPACA_API_KEY, ALPACA_SECRET_KEY)
+
+
+def _fetch_headlines(symbol: str, start: datetime, end: datetime) -> pd.DataFrame:
     """
-    Fetch one chunk of GDELT timeline tone data with exponential backoff.
-    Returns a DataFrame with columns [date, sentiment_mean, sentiment_count].
+    Fetch Benzinga headlines for symbol between start and end (UTC).
+    Returns a DataFrame with columns [date, headline]; date is the US/Eastern
+    calendar date of publication. alpaca-py paginates internally (50 articles
+    per request), so the range is fetched in 180-day chunks with pauses to
+    stay under the 200 req/min rate limit on long backfills.
     """
-    params = {
-        "query": query,
-        "mode": "timelinetone",
-        "STARTDATETIME": start.strftime("%Y%m%d%H%M%S"),
-        "ENDDATETIME": end.strftime("%Y%m%d%H%M%S"),
-        "format": "json",
-    }
-    for attempt in range(retries):
-        try:
-            resp = requests.get(_GDELT_BASE, params=params, timeout=15)
-            resp.raise_for_status()
-            break
-        except requests.RequestException as exc:
-            wait = 2 * (2 ** attempt)  # 2s, 4s, 8s
-            if attempt < retries - 1:
-                log.debug("GDELT retry %d/%d after %ds: %s", attempt + 1, retries, wait, exc)
-                time.sleep(wait)
-            else:
-                log.warning("GDELT request failed: %s", exc)
-                return pd.DataFrame(columns=["date", "sentiment_mean", "sentiment_count"])
+    from alpaca.data.requests import NewsRequest
 
-    try:
-        data = resp.json()
-    except ValueError as exc:
-        log.warning("GDELT JSON parse error: %s", exc)
-        return pd.DataFrame(columns=["date", "sentiment_mean", "sentiment_count"])
-
-    timeline = data.get("timeline", [])
-    if not timeline:
-        return pd.DataFrame(columns=["date", "sentiment_mean", "sentiment_count"])
-
-    # Each item in timeline has a "series" key with a list of {date, value} dicts.
-    # Flatten all series entries.
+    chunk = timedelta(days=180)
     rows = []
-    for series_item in timeline:
-        for point in series_item.get("data", []):
-            raw_date = point.get("date", "")
-            value = point.get("value")
-            if value is None:
-                continue
-            # date format: "YYYYMMDDTHHMMSS"
-            try:
-                dt = datetime.strptime(raw_date[:8], "%Y%m%d").date()
-            except ValueError:
-                continue
-            rows.append({"date": dt, "sentiment_mean": float(value) / 100.0, "sentiment_count": 1})
+    chunk_start = start
+    while chunk_start < end:
+        chunk_end = min(chunk_start + chunk, end)
+        req = NewsRequest(
+            symbols=symbol, start=chunk_start, end=chunk_end, include_content=False,
+        )
+        news = _news_client().get_news(req).data.get("news", [])
+        rows.extend(
+            {"date": n.created_at.astimezone(_EASTERN).date(), "headline": n.headline}
+            for n in news
+            if n.headline
+        )
+        chunk_start = chunk_end
+        if chunk_start < end:
+            time.sleep(1)
+    return pd.DataFrame(rows, columns=["date", "headline"])
 
-    if not rows:
-        return pd.DataFrame(columns=["date", "sentiment_mean", "sentiment_count"])
 
-    return pd.DataFrame(rows)
+def _aggregate_daily(scored: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate [date, score] rows into daily [sentiment_mean, sentiment_count]."""
+    daily = scored.groupby("date").agg(
+        sentiment_mean=("score", "mean"),
+        sentiment_count=("score", "count"),
+    )
+    daily.index = pd.to_datetime(daily.index)
+    daily.index.name = "date"
+    return daily.sort_index()
 
 
 def fetch_news_sentiment(
@@ -151,58 +111,65 @@ def fetch_news_sentiment(
 ) -> pd.DataFrame:
     """
     Return a DataFrame indexed by date with columns [sentiment_mean, sentiment_count].
-    Pulls 5 years of history from GDELT DOC 2.0 in 6-month chunks, caches to disk.
+
+    First call backfills ~5 years of Benzinga headlines via the Alpaca News API
+    and scores them with FinBERT; subsequent calls only fetch and score days
+    after the last cached date. The most recent cached day is re-fetched so
+    late-arriving articles are included.
     """
-    cache_path = DATA_CACHE / f"sentiment_{symbol}.parquet"
+    cache_path = DATA_CACHE / f"sentiment_news_{symbol}.parquet"
+    now = datetime.now(timezone.utc)
+
+    existing: pd.DataFrame | None = None
+    start = now - timedelta(days=_NEWS_LOOKBACK_DAYS)
     if not force_refresh and cache_path.exists():
-        return pd.read_parquet(cache_path)
+        existing = pd.read_parquet(cache_path)
+        if not existing.empty:
+            # Re-fetch the last cached day to pick up late-arriving articles
+            last = existing.index.max()
+            existing = existing[existing.index < last]
+            start = last.tz_localize(_EASTERN).astimezone(timezone.utc)
 
-    company = _company_name(symbol)
-    query = f'"{company} stock"'
+    try:
+        headlines = _fetch_headlines(symbol, start, now)
+    except Exception as exc:
+        log.warning("Alpaca news fetch failed for %s: %s", symbol, exc)
+        return existing if existing is not None else pd.DataFrame(
+            columns=["sentiment_mean", "sentiment_count"]
+        )
 
-    end = datetime.utcnow()
-    start_total = end - timedelta(days=5 * 365)
+    if headlines.empty:
+        daily_new = pd.DataFrame(columns=["sentiment_mean", "sentiment_count"])
+    else:
+        headlines = headlines.drop_duplicates()  # chunk boundaries can overlap
+        headlines["score"] = _score(headlines["headline"].tolist())
+        daily_new = _aggregate_daily(headlines[["date", "score"]])
 
-    chunk_size = timedelta(days=180)
-    all_chunks: list[pd.DataFrame] = []
-
-    chunk_start = start_total
-    while chunk_start < end:
-        chunk_end = min(chunk_start + chunk_size, end)
-        log.debug("GDELT fetch %s: %s → %s", symbol, chunk_start.date(), chunk_end.date())
-        chunk_df = _gdelt_chunk(query, chunk_start, chunk_end)
-        if not chunk_df.empty:
-            all_chunks.append(chunk_df)
-        chunk_start = chunk_end
-        time.sleep(1)  # avoid GDELT rate limiting across chunks
-
-    if not all_chunks:
-        log.warning("No GDELT data returned for %s", symbol)
+    parts = [p for p in (existing, daily_new) if p is not None and not p.empty]
+    if not parts:
+        log.info("No news sentiment for %s", symbol)
         return pd.DataFrame(columns=["sentiment_mean", "sentiment_count"])
 
-    combined = pd.concat(all_chunks, ignore_index=True)
-    combined["date"] = pd.to_datetime(combined["date"])
-
-    # Aggregate by date (multiple chunks can overlap at boundaries)
-    daily = combined.groupby("date").agg(
-        sentiment_mean=("sentiment_mean", "mean"),
-        sentiment_count=("sentiment_count", "sum"),
-    )
-    daily.index.name = "date"
-    daily.sort_index(inplace=True)
-
+    daily = pd.concat(parts).sort_index()
     daily.to_parquet(cache_path)
-    log.info("GDELT sentiment for %s: %d days cached", symbol, len(daily))
+    log.debug(
+        "News sentiment for %s: %d days cached (%d new headlines)",
+        symbol, len(daily), len(headlines),
+    )
     return daily
 
 
-def fetch_all_sentiment(symbols: list[str]) -> dict[str, pd.DataFrame]:
-    """Fetch GDELT sentiment for all symbols."""
+def fetch_all_sentiment(
+    symbols: list[str],
+    force_refresh: bool = False,
+) -> dict[str, pd.DataFrame]:
+    """Fetch news sentiment for all symbols with progress logging."""
     results = {}
-    for i, sym in enumerate(symbols):
-        results[sym] = fetch_news_sentiment(sym)
-        if i < len(symbols) - 1:
-            time.sleep(3)  # pause between symbols to avoid sustained rate limiting
+    for i, sym in enumerate(symbols, 1):
+        results[sym] = fetch_news_sentiment(sym, force_refresh=force_refresh)
+        if i % 10 == 0 or i == len(symbols):
+            log.info("News sentiment: %d/%d symbols done", i, len(symbols))
+        time.sleep(0.3)  # stay well under the 200 req/min rate limit
     return results
 
 
