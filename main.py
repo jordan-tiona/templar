@@ -177,8 +177,14 @@ def cmd_run(args):
     if not args.dry:
         clock = get_client().get_clock()
         if not clock.is_open:
-            log.info("Market is closed (next open: %s) -- skipping order execution.", clock.next_open)
-            return
+            minutes_to_open = (clock.next_open - clock.timestamp).total_seconds() / 60
+            if minutes_to_open > 60:
+                log.info("Market is closed (next open: %s) -- skipping order execution.", clock.next_open)
+                return
+            log.info(
+                "Market opens in %.0f minutes (%s) -- orders will queue for the opening auction.",
+                minutes_to_open, clock.next_open,
+            )
 
     watchlist = get_watchlist()
 

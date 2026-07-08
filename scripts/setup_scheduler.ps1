@@ -1,9 +1,11 @@
 # Templar - Task Scheduler setup
 # Run this once as Administrator to register both scheduled tasks.
-# Adjust $MarketOpenTime if you are not in Eastern Time.
+# The daily run happens shortly before market open (9:30 AM ET); orders queue
+# with Alpaca and fill at the opening auction. main.py run skips execution only
+# if the next open is more than an hour away. Adjust for your timezone.
 
 param(
-    [string]$DailyTime  = "09:00",   # time to run daily pipeline (local time)
+    [string]$DailyTime  = "07:15",   # time to run daily pipeline (local time; 7:15 MT = 9:15 ET)
     [string]$WeeklyTime = "22:00",   # time to run weekly retrain (Sunday)
     [switch]$Dry                      # register tasks in dry-run mode
 )
@@ -18,6 +20,11 @@ if ($Dry) {
     $DailyArgs += " -Dry"
 }
 
+# Interactive: shows a console window with live output in the user's session.
+# Caveats: the task only runs while the user is logged on, and closing the
+# window kills the run mid-flight. Output is also captured in logs\ either way.
+$principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
+
 # --- Daily task (Mon-Fri) ---
 $dailyAction  = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $DailyArgs -WorkingDirectory $Root
 $dailyTrigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At $DailyTime
@@ -28,7 +35,7 @@ Register-ScheduledTask `
     -Action     $dailyAction `
     -Trigger    $dailyTrigger `
     -Settings   $dailySettings `
-    -RunLevel   Highest `
+    -Principal  $principal `
     -Force
 
 Write-Host "Registered: Templar - Daily Run (Mon-Fri at $DailyTime)"
@@ -43,7 +50,7 @@ Register-ScheduledTask `
     -Action     $weeklyAction `
     -Trigger    $weeklyTrigger `
     -Settings   $weeklySettings `
-    -RunLevel   Highest `
+    -Principal  $principal `
     -Force
 
 Write-Host "Registered: Templar - Weekly Retrain (Sunday at $WeeklyTime)"

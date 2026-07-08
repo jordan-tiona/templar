@@ -1,6 +1,7 @@
 # Templar - daily trading pipeline
-# Runs fetch + signal generation + order execution before market open
-# Schedule: Mon-Fri at 9:00 AM local time (adjust to your timezone vs ET)
+# Runs fetch + signal generation + order execution shortly before market open;
+# orders queue with Alpaca and fill at the opening auction.
+# Schedule: Mon-Fri at 7:15 AM Mountain (9:15 AM ET)
 
 param(
     [switch]$Dry  # pass -Dry to log orders without submitting
@@ -35,7 +36,7 @@ if ($day -eq "Saturday" -or $day -eq "Sunday") {
 
 # 1. Fetch latest bars and sentiment
 Log "--- Phase 1: Fetching market data ---"
-& $Python (Join-Path $Root "main.py") fetch 2>&1 | Tee-Object -Append -FilePath $LogFile -Encoding utf8
+& $Python (Join-Path $Root "main.py") fetch 2>&1 | Tee-Object -Append -FilePath $LogFile
 if ($LASTEXITCODE -ne 0) {
     Log "ERROR: fetch failed (exit $LASTEXITCODE)"
     exit 1
@@ -45,7 +46,7 @@ if ($LASTEXITCODE -ne 0) {
 Log "--- Phase 2: Generating signals and executing orders ---"
 $MainPy = Join-Path $Root "main.py"
 $runArgs = if ($Dry) { @("run", "--dry") } else { @("run") }
-& $Python $MainPy $runArgs 2>&1 | Tee-Object -Append -FilePath $LogFile -Encoding utf8
+& $Python $MainPy $runArgs 2>&1 | Tee-Object -Append -FilePath $LogFile
 if ($LASTEXITCODE -ne 0) {
     Log "ERROR: run failed (exit $LASTEXITCODE)"
     exit 1

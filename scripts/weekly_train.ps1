@@ -2,7 +2,9 @@
 # Runs: fetch --refresh, tune (monthly), train
 # Schedule: Sunday at 10:00 PM local time
 
-$ErrorActionPreference = "Stop"
+# Note: no $ErrorActionPreference = "Stop" here. In Windows PowerShell 5.1 that
+# turns any native stderr output routed through 2>&1 (e.g. PyTorch warnings)
+# into a fatal NativeCommandError. Failures are caught via $LASTEXITCODE instead.
 $Root = Split-Path $PSScriptRoot -Parent
 $LogDir = Join-Path $Root "logs"
 $LogFile = Join-Path $LogDir "train_$(Get-Date -Format 'yyyy-MM-dd').log"
@@ -25,14 +27,14 @@ if (-not (Test-Path $Python)) {
 
 # 1. Refresh all market data and sentiment
 Log "--- Phase 1: Refreshing market data ---"
-& $Python (Join-Path $Root "main.py") fetch --refresh 2>&1 | Tee-Object -Append -FilePath $LogFile -Encoding utf8
+& $Python (Join-Path $Root "main.py") fetch --refresh 2>&1 | Tee-Object -Append -FilePath $LogFile
 if ($LASTEXITCODE -ne 0) { Log "ERROR: fetch failed"; exit 1 }
 
 # 2. Run Optuna tuning once a month (first Sunday of the month)
 $dayOfMonth = (Get-Date).Day
 if ($dayOfMonth -le 7) {
     Log "--- Phase 2: Monthly Optuna tuning ---"
-    & $Python (Join-Path $Root "main.py") tune --trials 50 2>&1 | Tee-Object -Append -FilePath $LogFile -Encoding utf8
+    & $Python (Join-Path $Root "main.py") tune --trials 50 2>&1 | Tee-Object -Append -FilePath $LogFile
     if ($LASTEXITCODE -ne 0) { Log "WARNING: tune failed, continuing with existing params" }
 } else {
     Log "--- Phase 2: Skipping Optuna (not first Sunday of month) ---"
@@ -40,7 +42,7 @@ if ($dayOfMonth -le 7) {
 
 # 3. Retrain both models
 Log "--- Phase 3: Retraining models ---"
-& $Python (Join-Path $Root "main.py") train 2>&1 | Tee-Object -Append -FilePath $LogFile -Encoding utf8
+& $Python (Join-Path $Root "main.py") train 2>&1 | Tee-Object -Append -FilePath $LogFile
 if ($LASTEXITCODE -ne 0) { Log "ERROR: train failed"; exit 1 }
 
 Log "=== Templar weekly retrain complete ==="
