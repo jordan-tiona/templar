@@ -42,13 +42,47 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# 2. Generate signals and execute orders
+# 2. Start Ollama for the plain-English summaries if it isn't already running.
+# Track the PID so we only stop an instance we started, never the user's own.
+# Detection is a raw TCP probe: PS 5.1 Invoke-WebRequest can time out against
+# an Ollama that is up but busy with inference.
+$OllamaProc = $null
+$OllamaUp = $false
+$tcp = New-Object Net.Sockets.TcpClient
+try {
+    $ar = $tcp.BeginConnect("127.0.0.1", 11434, $null, $null)
+    $OllamaUp = $ar.AsyncWaitHandle.WaitOne(2000) -and $tcp.Connected
+} catch {} finally { $tcp.Close() }
+
+if ($OllamaUp) {
+    Log "Ollama already running -- will leave it running afterwards"
+} else {
+    $ollamaCmd = Get-Command ollama -ErrorAction SilentlyContinue
+    if ($ollamaCmd) {
+        $OllamaProc = Start-Process -FilePath $ollamaCmd.Source -ArgumentList "serve" -WindowStyle Hidden -PassThru
+        Log "Started Ollama (PID $($OllamaProc.Id)) for summary generation"
+        Start-Sleep -Seconds 3
+    } else {
+        Log "Ollama not found -- plain-English summaries will be skipped"
+    }
+}
+
+# 3. Generate signals and execute orders
 Log "--- Phase 2: Generating signals and executing orders ---"
 $MainPy = Join-Path $Root "main.py"
 $runArgs = if ($Dry) { @("run", "--dry") } else { @("run") }
 & $Python $MainPy $runArgs 2>&1 | Tee-Object -Append -FilePath $LogFile
-if ($LASTEXITCODE -ne 0) {
-    Log "ERROR: run failed (exit $LASTEXITCODE)"
+$runExit = $LASTEXITCODE
+
+# Stop Ollama if this run started it (taskkill /T catches the model
+# runner children that 'ollama serve' spawns; frees the ~2GB model RAM)
+if ($OllamaProc -and -not $OllamaProc.HasExited) {
+    & taskkill /PID $OllamaProc.Id /T /F 2>$null | Out-Null
+    Log "Stopped Ollama (PID $($OllamaProc.Id))"
+}
+
+if ($runExit -ne 0) {
+    Log "ERROR: run failed (exit $runExit)"
     exit 1
 }
 
