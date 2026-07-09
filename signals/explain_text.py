@@ -66,7 +66,16 @@ def _call_ollama(sym: str, d: dict, model: str, timeout: int) -> tuple[str, str 
     try:
         resp = requests.post(
             OLLAMA_URL,
-            json={"model": model, "prompt": prompt, "stream": False},
+            json={
+                "model": model,
+                "prompt": prompt,
+                "stream": False,
+                # Small context keeps the KV cache tiny so the model fits
+                # entirely in VRAM. A server-side default of 128K context
+                # inflates 3B-model memory to ~18GB, spills to CPU, and
+                # times out (prompts here are well under 1K tokens).
+                "options": {"num_ctx": 2048},
+            },
             timeout=timeout,
         )
         resp.raise_for_status()
@@ -98,7 +107,11 @@ def add_summaries(
     # and time out before it finishes loading into VRAM.
     try:
         requests.get(OLLAMA_URL.rsplit("/", 1)[0], timeout=3)
-        requests.post(OLLAMA_URL, json={"model": model, "prompt": ".", "stream": False}, timeout=60)
+        requests.post(
+            OLLAMA_URL,
+            json={"model": model, "prompt": ".", "stream": False, "options": {"num_ctx": 2048}},
+            timeout=60,
+        )
     except requests.exceptions.ConnectionError:
         log.warning("Ollama not reachable — skipping plain-English summaries")
         return
