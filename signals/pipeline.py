@@ -143,8 +143,13 @@ def generate_signals(
             log.warning("%s: too few rows after target drop (%d), skipping", sym, len(df_t))
             continue
 
-        feature_cols = [c for c in TIME_VARYING_UNKNOWN if c in df_t.columns]
-        X_scaled = scaler.transform(df_t.iloc[[-1]][feature_cols].values)
+        feature_cols = [c for c in TIME_VARYING_UNKNOWN if c in df.columns]
+        # Predict from the latest feature row (df), NOT df_t: add_target()
+        # drops the trailing PREDICTION_HORIZON rows because their forward
+        # return is still unknown, so df_t's last row is ~20 trading days
+        # stale. Until 2026-07-09 live signals were generated from those
+        # month-old feature rows.
+        X_scaled = scaler.transform(df.iloc[[-1]][feature_cols].values)
 
         df_t["symbol"] = sym
         df_t["time_idx"] = range(len(df_t))
@@ -161,7 +166,9 @@ def generate_signals(
             log.error("XGBoost prediction failed for %s: %s", sym, e)
             xgb_preds[sym] = float("nan")
 
-        explain_inputs[sym] = {"df": df_t, "X_scaled": X_scaled, "feature_cols": feature_cols}
+        # df: latest features for the snapshot/date; df_t: target-bearing
+        # frame required by TFT dataset construction in interpret()
+        explain_inputs[sym] = {"df": df, "df_t": df_t, "X_scaled": X_scaled, "feature_cols": feature_cols}
 
     tft_series = pd.Series(tft_preds, name="tft_pred")
     xgb_series = pd.Series(xgb_preds, name="xgb_pred")
@@ -188,7 +195,7 @@ def generate_signals(
 
         tft_interp = None
         try:
-            tft_interp = tft_model.interpret(tft, inp["df"])
+            tft_interp = tft_model.interpret(tft, inp["df_t"])
         except Exception as e:
             log.warning("TFT interpretation failed for %s: %s", sym, e)
 
