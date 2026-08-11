@@ -73,7 +73,11 @@ BUY_THRESHOLD = 0.6        # ensemble confidence to trigger buy
 SELL_THRESHOLD = 0.4       # below this triggers sell
 
 # Risk
-MAX_POSITION_PCT = 0.05    # max 5% of portfolio per position
+MAX_POSITION_PCT = 0.05    # hard cap: max 5% of portfolio per position
+TARGET_GROSS_LEVERAGE = 1.8  # target |long|+|short| exposure as a multiple of equity;
+                             # keeps the book inside Alpaca's 2x Reg-T overnight margin
+                             # (at 5% x 58 positions gross hit ~2.9x and short orders
+                             # started failing on insufficient buying power)
 MAX_DRAWDOWN_PCT = 0.15    # halt trading if portfolio drawdown exceeds 15%
 STOP_LOSS_PCT    = 0.07    # close position if it moves 7% against entry
 TAKE_PROFIT_PCT  = 0.20   # close position if it gains 20% from entry

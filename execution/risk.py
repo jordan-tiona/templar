@@ -8,6 +8,7 @@ from config.settings import (
     ALPACA_API_KEY, ALPACA_SECRET_KEY,
     MAX_POSITION_PCT, MAX_DRAWDOWN_PCT,
     STOP_LOSS_PCT, TAKE_PROFIT_PCT,
+    TARGET_GROSS_LEVERAGE,
 )
 
 log = logging.getLogger(__name__)
@@ -40,8 +41,17 @@ def drawdown_breached(client: TradingClient) -> bool:
     return False
 
 
-def max_position_value(client: TradingClient) -> float:
-    return portfolio_equity(client) * MAX_POSITION_PCT
+def max_position_value(client: TradingClient, n_targets: int = 0) -> float:
+    """
+    Per-position budget. When the target book size is known, split the gross
+    exposure target evenly across it (capped by MAX_POSITION_PCT) so total
+    exposure stays inside overnight margin regardless of position count.
+    """
+    equity = portfolio_equity(client)
+    cap = equity * MAX_POSITION_PCT
+    if n_targets <= 0:
+        return cap
+    return min(cap, equity * TARGET_GROSS_LEVERAGE / n_targets)
 
 
 def current_position(client: TradingClient, symbol: str) -> Position | None:
@@ -72,7 +82,27 @@ def take_profit_triggered(pos: Position) -> bool:
     if is_long and plpc >= TAKE_PROFIT_PCT:
         log.info("%s long take profit: +%.2f%%", pos.symbol, plpc * 100)
         return True
-    if not is_long and plpc <= -TAKE_PROFIT_PCT:
-        log.info("%s short take profit: +%.2f%%", pos.symbol, abs(plpc) * 100)
+    # unrealized_plpc is profit-signed for both sides (positive = winning),
+    # so shorts also take profit at plpc >= +TAKE_PROFIT_PCT.
+    if not is_long and plpc >= TAKE_PROFIT_PCT:
+        log.info("%s short take profit: +%.2f%%", pos.symbol, plpc * 100)
+        return True
+    return False
+
+
+def stop_loss_breached(pos: Position) -> bool:
+    """
+    Safety net behind the native GTC stop orders: if a stop order is lost
+    (cancelled, expired, rejected), the daily run still closes any position
+    past the stop-loss threshold.
+    """
+    try:
+        plpc = float(pos.unrealized_plpc)
+    except (TypeError, ValueError):
+        return False
+
+    if plpc <= -STOP_LOSS_PCT:
+        log.warning("%s past stop-loss threshold: %.2f%% (native stop missing or not filled)",
+                    pos.symbol, plpc * 100)
         return True
     return False

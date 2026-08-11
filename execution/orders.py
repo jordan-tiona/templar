@@ -16,14 +16,15 @@ from .risk import (
     position_value,
     current_position,
     take_profit_triggered,
+    stop_loss_breached,
 )
 
 log = logging.getLogger(__name__)
 
 
-def _target_qty(client: TradingClient, symbol: str, price: float) -> int:
+def _target_qty(client: TradingClient, symbol: str, price: float, n_targets: int = 0) -> int:
     """Shares to open for a new long or short position (same sizing both sides)."""
-    max_val = max_position_value(client)
+    max_val = max_position_value(client, n_targets)
     current_val = position_value(client, symbol)
     available = max(0.0, max_val - current_val)
     if available < price:
@@ -74,11 +75,14 @@ def _open_position(
         return "dry_run"
 
     try:
+        # TIF must be GTC: OTO child legs inherit the parent's TIF, so a DAY
+        # parent makes the stop-loss leg expire at the close of entry day,
+        # leaving the position unprotected.
         req = MarketOrderRequest(
             symbol=symbol,
             qty=qty,
             side=side,
-            time_in_force=TimeInForce.DAY,
+            time_in_force=TimeInForce.GTC,
             order_class=OrderClass.OTO,
             stop_loss=StopLossRequest(stop_price=stop_price),
         )
@@ -107,6 +111,9 @@ def execute_signals(
 
     buy_symbols = set(signals[signals["signal"] == "BUY"].index)
     short_symbols = set(signals[signals["signal"] == "SHORT"].index)
+    # Size against the full intended book (before take-profit/borrowability
+    # drops) so per-position budgets don't inflate as names fall out.
+    n_targets = len(buy_symbols) + len(short_symbols)
 
     try:
         open_positions = client.get_all_positions()
@@ -114,26 +121,32 @@ def execute_signals(
         log.error("Failed to fetch open positions: %s", e)
         open_positions = []
 
-    # --- Step 0: close positions that hit take-profit target ---
+    # --- Step 0: close positions that hit take-profit or breached stop-loss ---
+    # Stop-loss here is a safety net; the native GTC stop order should fire first.
     took_profit = set()
     for pos in open_positions:
         if take_profit_triggered(pos):
-            sym = pos.symbol
-            _cancel_open_orders(client, sym, dry_run)
-            log.info("%s: take-profit - closing position", sym)
-            if not dry_run:
-                try:
-                    client.close_position(sym)
-                    records.append({"symbol": sym, "action": "TAKE_PROFIT",
-                                    "qty": abs(int(float(pos.qty))), "order_id": "close"})
-                except Exception as e:
-                    log.error("Failed to close %s on take-profit: %s", sym, e)
-            else:
-                records.append({"symbol": sym, "action": "TAKE_PROFIT",
-                                "qty": abs(int(float(pos.qty))), "order_id": "dry_run"})
-            took_profit.add(sym)
-            buy_symbols.discard(sym)
-            short_symbols.discard(sym)
+            action = "TAKE_PROFIT"
+        elif stop_loss_breached(pos):
+            action = "STOP_LOSS"
+        else:
+            continue
+        sym = pos.symbol
+        _cancel_open_orders(client, sym, dry_run)
+        log.info("%s: %s - closing position", sym, action.lower().replace("_", "-"))
+        if not dry_run:
+            try:
+                client.close_position(sym)
+                records.append({"symbol": sym, "action": action,
+                                "qty": abs(int(float(pos.qty))), "order_id": "close"})
+            except Exception as e:
+                log.error("Failed to close %s on %s: %s", sym, action.lower(), e)
+        else:
+            records.append({"symbol": sym, "action": action,
+                            "qty": abs(int(float(pos.qty))), "order_id": "dry_run"})
+        took_profit.add(sym)
+        buy_symbols.discard(sym)
+        short_symbols.discard(sym)
 
     # --- Step 1: close positions no longer in the target set ---
     for pos in open_positions:
@@ -170,7 +183,7 @@ def execute_signals(
         if pos is not None and float(pos.qty) > 0:
             log.info("BUY %s: already long, holding", symbol)
             continue
-        qty = _target_qty(client, symbol, price)
+        qty = _target_qty(client, symbol, price, n_targets)
         if qty <= 0:
             log.info("BUY %s: insufficient funds", symbol)
             continue
@@ -205,7 +218,7 @@ def execute_signals(
         if pos is not None and float(pos.qty) < 0:
             log.info("SHORT %s: already short, holding", symbol)
             continue
-        qty = _target_qty(client, symbol, price)
+        qty = _target_qty(client, symbol, price, n_targets)
         if qty <= 0:
             log.info("SHORT %s: insufficient funds", symbol)
             continue
