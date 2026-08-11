@@ -1,7 +1,10 @@
 """Order submission via Alpaca."""
 
+import json
 import logging
+import time
 import pandas as pd
+from alpaca.common.exceptions import APIError
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import (
     MarketOrderRequest, GetOrdersRequest, StopLossRequest,
@@ -33,16 +36,35 @@ def _target_qty(client: TradingClient, symbol: str, price: float, n_targets: int
 
 
 def _cancel_open_orders(client: TradingClient, symbol: str, dry_run: bool) -> None:
-    """Cancel all open orders for a symbol (cleans up GTC stop orders on position close)."""
+    """
+    Cancel all open orders for a symbol (cleans up GTC stop orders on position close),
+    then wait for the cancels to actually clear. Alpaca cancellation is async: the
+    shares stay 'held_for_orders' for a moment after cancel_order_by_id returns, so a
+    close_position call issued immediately after can fail with "insufficient qty
+    available" even though the order was just cancelled.
+    """
     try:
         open_orders = client.get_orders(filter=GetOrdersRequest(
             status=QueryOrderStatus.OPEN,
             symbols=[symbol],
         ))
+        if not open_orders:
+            return
         for order in open_orders:
             log.debug("Cancelling order %s for %s", order.id, symbol)
             if not dry_run:
                 client.cancel_order_by_id(order.id)
+        if dry_run:
+            return
+        for _ in range(5):
+            still_open = client.get_orders(filter=GetOrdersRequest(
+                status=QueryOrderStatus.OPEN,
+                symbols=[symbol],
+            ))
+            if not still_open:
+                return
+            time.sleep(1.0)
+        log.warning("%s: open orders still present 5s after cancel", symbol)
     except Exception as e:
         log.warning("Could not cancel orders for %s: %s", symbol, e)
 
@@ -74,20 +96,46 @@ def _open_position(
     if dry_run:
         return "dry_run"
 
-    try:
+    def _build_request(stop: float) -> MarketOrderRequest:
         # TIF must be GTC: OTO child legs inherit the parent's TIF, so a DAY
         # parent makes the stop-loss leg expire at the close of entry day,
         # leaving the position unprotected.
-        req = MarketOrderRequest(
+        return MarketOrderRequest(
             symbol=symbol,
             qty=qty,
             side=side,
             time_in_force=TimeInForce.GTC,
             order_class=OrderClass.OTO,
-            stop_loss=StopLossRequest(stop_price=stop_price),
+            stop_loss=StopLossRequest(stop_price=stop),
         )
-        order = client.submit_order(req)
+
+    try:
+        order = client.submit_order(_build_request(stop_price))
         return str(order.id)
+    except APIError as e:
+        # `price` is the prior close used for sizing; by order time the stock may
+        # have gapped past the stop threshold, so Alpaca rejects the stale stop
+        # against its own fill reference (base_price). Retry once against that.
+        try:
+            body = json.loads(str(e))
+        except (TypeError, ValueError):
+            body = {}
+        base_price = body.get("base_price")
+        if base_price is None or "stop_loss.stop_price" not in body.get("message", ""):
+            log.error("Failed to submit %s order for %s: %s", action, symbol, e)
+            return None
+        base_price = float(base_price)
+        retry_stop = round(base_price * (1 - STOP_LOSS_PCT), 2) if is_long else round(base_price * (1 + STOP_LOSS_PCT), 2)
+        log.warning(
+            "%s %s: stop $%.2f rejected vs base_price $%.2f (gap since last close) -- retrying at $%.2f",
+            symbol, action, stop_price, base_price, retry_stop,
+        )
+        try:
+            order = client.submit_order(_build_request(retry_stop))
+            return str(order.id)
+        except Exception as e2:
+            log.error("Failed to submit %s order for %s on retry: %s", action, symbol, e2)
+            return None
     except Exception as e:
         log.error("Failed to submit %s order for %s: %s", action, symbol, e)
         return None
