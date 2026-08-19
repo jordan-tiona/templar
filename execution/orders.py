@@ -5,13 +5,15 @@ import logging
 import time
 import pandas as pd
 from alpaca.common.exceptions import APIError
+from alpaca.data.historical import StockHistoricalDataClient
+from alpaca.data.requests import StockLatestTradeRequest
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import (
     MarketOrderRequest, GetOrdersRequest, StopLossRequest,
 )
 from alpaca.trading.enums import OrderSide, TimeInForce, QueryOrderStatus, OrderClass
 
-from config.settings import STOP_LOSS_PCT
+from config.settings import ALPACA_API_KEY, ALPACA_SECRET_KEY, STOP_LOSS_PCT
 from .risk import (
     get_client,
     drawdown_breached,
@@ -23,6 +25,28 @@ from .risk import (
 )
 
 log = logging.getLogger(__name__)
+
+_data_client = StockHistoricalDataClient(ALPACA_API_KEY, ALPACA_SECRET_KEY)
+
+
+def _live_price(symbol: str, fallback: float) -> float:
+    """
+    Latest trade price, used to size and submit orders. `fallback` (the prior
+    day's close, used for signal generation) can be badly stale by the time
+    orders go out -- a stock that gaps overnight on news will size a "5% of
+    equity" position against last night's price and land at 2x that once the
+    market order actually fills at the gapped-up price. Re-pricing right
+    before submission keeps sizing (and therefore MAX_POSITION_PCT) honest.
+    """
+    try:
+        trade = _data_client.get_stock_latest_trade(
+            StockLatestTradeRequest(symbol_or_symbols=symbol)
+        )[symbol]
+        if trade.price and trade.price > 0:
+            return float(trade.price)
+    except Exception as e:
+        log.warning("%s: could not fetch live price (%s), falling back to $%.2f", symbol, e, fallback)
+    return fallback
 
 
 def _target_qty(client: TradingClient, symbol: str, price: float, n_targets: int = 0) -> int:
@@ -231,6 +255,7 @@ def execute_signals(
         if pos is not None and float(pos.qty) > 0:
             log.info("BUY %s: already long, holding", symbol)
             continue
+        price = _live_price(symbol, price)
         qty = _target_qty(client, symbol, price, n_targets)
         if qty <= 0:
             log.info("BUY %s: insufficient funds", symbol)
@@ -266,6 +291,7 @@ def execute_signals(
         if pos is not None and float(pos.qty) < 0:
             log.info("SHORT %s: already short, holding", symbol)
             continue
+        price = _live_price(symbol, price)
         qty = _target_qty(client, symbol, price, n_targets)
         if qty <= 0:
             log.info("SHORT %s: insufficient funds", symbol)
