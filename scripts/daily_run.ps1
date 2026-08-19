@@ -7,6 +7,36 @@ param(
     [switch]$Dry  # pass -Dry to log orders without submitting
 )
 
+# Disable console QuickEdit mode. With it on, a stray click into this
+# (intentionally visible) window selects text and freezes all console I/O
+# until someone clicks back in and presses Enter/Esc -- which silently
+# stalled the run on 2026-08-13. Turning it off keeps the window visible
+# and readable but stops clicks from pausing execution.
+try {
+    $sig = @'
+[DllImport("kernel32.dll", SetLastError = true)]
+public static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
+[DllImport("kernel32.dll", SetLastError = true)]
+public static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
+[DllImport("kernel32.dll", SetLastError = true)]
+public static extern IntPtr GetStdHandle(int nStdHandle);
+'@
+    Add-Type -MemberDefinition $sig -Name NativeConsole -Namespace Win32Console -ErrorAction Stop
+
+    $STD_INPUT_HANDLE = -10
+    $ENABLE_QUICK_EDIT_MODE = 0x0040
+    $ENABLE_EXTENDED_FLAGS = 0x0080
+
+    $handle = [Win32Console.NativeConsole]::GetStdHandle($STD_INPUT_HANDLE)
+    $mode = 0
+    if ([Win32Console.NativeConsole]::GetConsoleMode($handle, [ref]$mode)) {
+        $newMode = ($mode -band (-bnot $ENABLE_QUICK_EDIT_MODE)) -bor $ENABLE_EXTENDED_FLAGS
+        [Win32Console.NativeConsole]::SetConsoleMode($handle, $newMode) | Out-Null
+    }
+} catch {
+    # Non-fatal: worst case QuickEdit stays on and we're back to the old behavior.
+}
+
 $Root = Split-Path $PSScriptRoot -Parent
 $LogDir = Join-Path $Root "logs"
 $LogFile = Join-Path $LogDir "scheduler_$(Get-Date -Format 'yyyy-MM-dd').log"
