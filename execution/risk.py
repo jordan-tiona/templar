@@ -3,6 +3,8 @@
 import logging
 from alpaca.trading.client import TradingClient
 from alpaca.trading.models import Position
+from alpaca.trading.requests import GetOrdersRequest
+from alpaca.trading.enums import OrderType, QueryOrderStatus
 
 from config.settings import (
     ALPACA_API_KEY, ALPACA_SECRET_KEY,
@@ -106,3 +108,23 @@ def stop_loss_breached(pos: Position) -> bool:
                     pos.symbol, plpc * 100)
         return True
     return False
+
+
+def positions_missing_stop(client: TradingClient) -> list[str]:
+    """
+    Symbols with an open position but no live GTC stop order.
+
+    A native stop protects intraday; stop_loss_breached() above is only a
+    once-per-daily-run backstop against plpc, so a stop that gets cancelled
+    (e.g. mid-resize) and never replaced can leave a position unprotected
+    for a full trading day or more before that backstop would even see it.
+    """
+    positions = client.get_all_positions()
+    # Explicit limit: get_orders defaults to 50, which silently truncates once
+    # the book has more open orders than that (this cost a real bug once).
+    open_orders = client.get_orders(filter=GetOrdersRequest(status=QueryOrderStatus.OPEN, limit=500))
+    protected = {o.symbol for o in open_orders if o.order_type == OrderType.STOP}
+    missing = [p.symbol for p in positions if p.symbol not in protected]
+    for symbol in missing:
+        log.error("%s: open position has no live stop-loss order", symbol)
+    return missing

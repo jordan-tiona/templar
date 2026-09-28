@@ -175,6 +175,7 @@ def cmd_train(args):
 def cmd_run(args):
     from signals import generate_signals
     from execution import execute_signals, get_client
+    from execution.risk import positions_missing_stop
     from data import fetch_bars
     from data.screener import get_watchlist
 
@@ -208,6 +209,11 @@ def cmd_run(args):
             log.info("  %s", o)
     else:
         log.info("No orders placed.")
+
+    if not args.dry:
+        missing = positions_missing_stop(get_client())
+        if missing:
+            log.error("%d position(s) with no live stop-loss order: %s", len(missing), missing)
 
 
 def cmd_tune(args):
