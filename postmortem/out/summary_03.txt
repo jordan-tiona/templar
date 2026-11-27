@@ -1,0 +1,250 @@
+====================================================================================================
+ACCOUNT
+====================================================================================================
+equity now 77,294.57  last_equity 75,977.04  open positions 56  long MV 64,314  short MV -63,234
+fills: 7215 records, 2928 orders, 107 fill days, 151 symbols, 2026-05-20 -> 2026-11-18
+fill side counts: {'buy': 3617, 'sell_short': 1960, 'sell': 1638}  by order type: {'MARKET': 6710, 'STOP': 505}
+
+====================================================================================================
+ROUND TRIPS (closed flat->open->flat episodes)
+====================================================================================================
+closed episodes: 1436   still open: 56   trading days in span: 127   -> 11.3 round trips per trading day (span), 14.2 per day with any exit
+since Jul 9 (full book): 1349 closed episodes over 94 trading days -> 14.4 round trips per day; trading days with at least one fill: 93
+holding time (trading days): mean 3.1  median 2  p25 1  p75 4  max 37
+holding-time distribution (trading days, capped at 30): {0: 139, 1: 545, 2: 234, 3: 125, 4: 115, 5: 53, 6: 48, 7: 38, 8: 21, 9: 26, 10: 13, 11: 17, 12: 10, 13: 6, 14: 11, 15: 8, 16: 5, 17: 3, 18: 3, 19: 6, 20: 1, 21: 1, 23: 1, 24: 1, 25: 1, 28: 1, 29: 3, 30: 1}
+win rate 40.0%   avg win $131.64 (4.17%)   avg loss $-118.69 (-3.88%)   avg P&L/trade $-18.45 (-0.657%)   median P&L $-19.58   profit factor 0.74
+realized P&L closed episodes: $-26,496.86   unrealized on open episodes (marked to last close): $3,448.53   Alpaca unrealized_pl on open positions: $3,902.98
+avg notional per episode $3,131;  total traded notional (all fills) $9,119,831
+
+by side:
+         n  win_rate       pnl  avg_pnl  avg_ret_pct   hold
+side                                                       
+long   677     0.405 -14522.63  -21.451       -0.843  3.241
+short  759     0.397 -11974.23  -15.776       -0.491  2.935
+
+by exit reason:
+                       n  win_rate       pnl  avg_pnl  avg_ret_pct    hold
+exit_reason                                                               
+MANUAL/OTHER          67     0.537   1612.53   24.068        0.486   1.358
+NATIVE_STOP          222     0.000 -41794.84 -188.265       -6.264   3.009
+REBALANCE_DROP      1037     0.488  12032.47   11.603        0.413   2.905
+STOP_LOSS_BACKSTOP    77     0.000 -22491.65 -292.099       -9.661   3.948
+TAKE_PROFIT           33     1.000  24144.63  731.655       22.125  10.515
+
+by period (episode exit date):
+                                          n  win_rate       pnl  avg_pnl   hold  stops
+period                                                                                
+P1 May21-Jul08 small 50-sym book         87     0.529    -47.20   -0.543  1.103      1
+P2 Jul09-Aug11 150-sym book, exec bugs  363     0.383  -9996.64  -27.539  2.526     60
+P3 Aug12-Oct03 clean eval, retrain OK   485     0.433  -2038.62   -4.203  3.606     65
+P4 Oct04-Nov18 retrain job failing      501     0.359 -14414.40  -28.771  3.313     96
+
+by side x period (sum pnl / count):
+                                            sum         size      
+side                                       long   short long short
+period                                                            
+P1 May21-Jul08 small 50-sym book         1344.0 -1391.0   14    73
+P2 Jul09-Aug11 150-sym book, exec bugs  -6379.0 -3617.0  174   189
+P3 Aug12-Oct03 clean eval, retrain OK    3785.0 -5824.0  244   241
+P4 Oct04-Nov18 retrain job failing     -13272.0 -1142.0  245   256
+
+top 10 / bottom 10 symbols by realized P&L:
+           sum  size
+symbol              
+GLW    -2888.0    21
+META   -2445.0    18
+DDOG   -2222.0    18
+MOS    -1870.0    18
+ANET   -1805.0    14
+INTC   -1737.0    20
+PANW   -1700.0    13
+HOOD   -1542.0    16
+BKNG   -1174.0    10
+DELL   -1144.0    15
+BA       553.0    14
+CTSH     592.0     8
+XOM      645.0    10
+ORCL     659.0    14
+SNDK     897.0     5
+FCX     1115.0     9
+MRNA    1182.0    17
+VRT     1599.0    16
+MU      1958.0    13
+WDC     2413.0    11
+
+re-entry after exit (same symbol): share re-entered within 1 / 5 trading days, by exit reason:
+                      n  within1  within5  same_side  next_trade_pnl
+exit_reason                                                         
+MANUAL/OTHER         66    0.545    0.682      0.545         1099.03
+NATIVE_STOP         208    0.851    0.971      0.885        -2320.51
+REBALANCE_DROP      911    0.337    0.673      0.778       -19797.51
+STOP_LOSS_BACKSTOP   67    0.806    0.970      0.791        -3115.44
+TAKE_PROFIT          33    0.848    1.000      0.970        -1464.68
+
+====================================================================================================
+EXECUTION COST (fill vs benchmark: opening print for pre-open market orders, stop price for stop fills)
+====================================================================================================
+                       fills    notional  cost_usd  mean_bps  median_bps
+bucket                                                                  
+market intraday/other    470   877178.00      0.00      0.00        0.00
+market@open             6240  7575027.83  10825.21     13.34       12.90
+stop                     505   667625.32   1406.72     24.26        4.07
+                  fills  mean_bps  median_bps  cost_usd
+kind  side                                             
+close buy          1374     15.02       15.60   2796.17
+      sell         1263     12.76       14.03   2805.90
+open  buy          1731     12.68       10.36   2706.03
+      sell_short   1872     13.11       12.83   2517.10
+TOTAL execution cost vs benchmarks: $12,231.93  (13.4 bps of traded notional)
+execution cost and turnover by period:
+                                        fills   notional  cost_usd
+period                                                            
+P1 May21-Jul08 small 50-sym book          446   853950.0     602.0
+P2 Jul09-Aug11 150-sym book, exec bugs   1990  2767275.0    3568.0
+P3 Aug12-Oct03 clean eval, retrain OK    2388  2996047.0    4558.0
+P4 Oct04-Nov18 retrain job failing       2391  2502560.0    3504.0
+
+closed-episode P&L decomposition: realized $-26,497 = price movement at benchmarks $-14,394 minus execution cost $12,103
+                                        realized  price_move  exec_cost
+period                                                                 
+P1 May21-Jul08 small 50-sym book           -47.0       554.0      602.0
+P2 Jul09-Aug11 150-sym book, exec bugs   -9997.0     -6898.0     3099.0
+P3 Aug12-Oct03 clean eval, retrain OK    -2039.0      2674.0     4712.0
+P4 Oct04-Nov18 retrain job failing      -14414.0    -10724.0     3691.0
+
+====================================================================================================
+EXPOSURE (reconstructed from fills, marked at daily close)
+====================================================================================================
+                                        days  n_long  n_short    long_mv  short_mv  gross_x  net_x  net_min  net_max
+period                                                                                                              
+P1 May21-Jul08 small 50-sym book          33    1.45     1.45    7099.05  -7209.77     0.14  -0.00    -0.02     0.01
+P2 Jul09-Aug11 150-sym book, exec bugs    24   26.79    26.00  103213.91 -92542.91     2.01   0.11    -0.15     0.28
+P3 Aug12-Oct03 clean eval, retrain OK     37   22.38    22.19   74685.43 -65224.83     1.49   0.10    -0.02     0.43
+P4 Oct04-Nov18 retrain job failing        33   24.24    25.82   62099.57 -63045.63     1.53  -0.01    -0.26     0.28
+sample dates:
+      date  n_long  n_short   long_mv   short_mv  gross   net    equity
+2026-06-01       2        2   9693.16  -10061.24   0.20 -0.00 100233.44
+2026-07-08       0        0      0.00       0.00   0.00  0.00  99951.44
+2026-07-09      29       27 146102.81 -134172.03   2.80  0.12 100144.50
+2026-07-15      23       25 103053.75 -104546.43   2.14 -0.02  97023.66
+2026-08-12      28       27  96019.01  -78099.76   1.81  0.19  96273.73
+2026-09-04      29       28  94361.57  -80930.91   1.81  0.14  96584.21
+2026-09-08       5        5  17518.32  -12645.50   0.31  0.05  96354.68
+2026-09-15       1        1   3162.94   -1855.20   0.05  0.01  94054.24
+2026-10-02      28       27  80706.67  -71589.01   1.72  0.10  88363.59
+2026-10-12       7        8  20503.12  -18940.94   0.45  0.02  87284.08
+2026-11-17      27       29  62599.53  -63183.02   1.66 -0.01  75977.04
+
+====================================================================================================
+EQUITY CURVE vs BENCHMARKS
+====================================================================================================
+                                             start         end  days  equity_start  equity_end  ret_pct  daily_mean_pct  daily_std_pct  sharpe_ann  max_dd_pct  spy_ret_pct  ew_universe_bh_pct  n_univ
+period                                                                                                                                                                                                 
+P1 May21-Jul08 small 50-sym book        2026-05-20  2026-07-08    32     100081.49    99951.44    -0.13           -0.00           0.42       -0.12       -2.07         0.56                1.25     149
+P2 Jul09-Aug11 150-sym book, exec bugs  2026-07-09  2026-08-11    23     100144.50    96492.95    -3.65           -0.16           1.15       -2.14       -5.54         2.51                2.43     149
+P3 Aug12-Oct03 clean eval, retrain OK   2026-08-12  2026-10-02    36      96273.73    88363.59    -8.22           -0.23           1.09       -3.39      -10.45        -0.37               -1.64     149
+P4 Oct04-Nov18 retrain job failing      2026-10-05  2026-11-17    31      88089.83    75977.04   -13.75           -0.46           1.58       -4.65      -15.68        -5.76               -3.84     147
+FULL May20-Nov17                        2026-05-19  2026-11-17   126     100000.00    75977.04   -24.02           -0.21           1.11       -3.02      -26.13        -0.48               -0.23     147
+EVAL Aug11-Nov17 (restart)              2026-08-11  2026-11-17    69      96492.95    75977.04   -21.26           -0.34           1.32       -4.07      -24.18        -5.24               -5.62     147
+Jul09-Nov17 (full book)                 2026-07-08  2026-11-17    93      99951.44    75977.04   -23.99           -0.29           1.27       -3.59      -25.29        -2.04               -2.49     147
+
+daily return corr with SPY (Jul 9 ->): 0.05, beta 0.07  (a market-neutral book should be near 0)
+share of down days (Jul 9 ->): 61%   mean daily P&L $-263
+worst 10 days (%):
+date
+2026-10-22   -4.76
+2026-10-30   -2.96
+2026-10-16   -2.81
+2026-07-14   -2.34
+2026-10-29   -1.95
+2026-11-12   -1.83
+2026-11-09   -1.81
+2026-11-06   -1.79
+2026-10-01   -1.78
+2026-10-09   -1.56
+best 5 days (%):
+date
+2026-07-27    1.63
+2026-11-05    2.04
+2026-07-28    2.12
+2026-11-04    2.57
+2026-08-19    4.68
+
+====================================================================================================
+PREDICTIONS vs WHAT HAPPENED NEXT (signals_history.jsonl)
+====================================================================================================
+signal days with the full universe (Jul 9 ->): 91; 20-day forward windows complete for runs up to 2026-10-22
+cross-sectional Spearman IC of xgb_pred vs realized forward return (20d windows overlap heavily, so n_dates overstates independence):
+ horizon_days            returns  n_dates  mean_IC  IC_tstat  hit_rate
+            1         open->open       90  -0.0108   -0.8341    0.4778
+            1 prior close->close       91  -0.0258   -1.9023    0.4176
+            5         open->open       87  -0.0303   -2.5407    0.4138
+            5 prior close->close       87  -0.0429   -3.4844    0.3563
+           20         open->open       72   0.0529    4.0570    0.8333
+           20 prior close->close       73   0.0456    3.2911    0.7945
+
+mean forward return (%) of the BUY basket, SHORT basket, the HOLD rest, and long-short, equal-weight:
+ horizon            returns  n_days    BUY  SHORT  HOLD  long_short  ls_tstat  ls_hit
+       1         open->open      90 -0.197 -0.068 0.018      -0.129    -0.811   0.489
+       1 prior close->close      91 -0.119  0.089 0.010      -0.208    -1.150   0.451
+       5         open->open      87 -0.346  0.117 0.210      -0.463    -1.497   0.402
+       5 prior close->close      87 -0.306  0.328 0.207      -0.634    -1.783   0.414
+      20         open->open      72  3.086 -0.427 0.342       3.514     3.978   0.806
+      20 prior close->close      73  2.954 -0.099 0.364       3.053     3.481   0.781
+
+IC (open->open) by period:
+  P2 Jul09-Aug11 150-sym book, exec bugs: h=1: IC -0.0031 (n=24, hit 50%); h=5: IC -0.0003 (n=24, hit 42%); h=20: IC +0.1083 (n=24, hit 100%)
+  P3 Aug12-Oct03 clean eval, retrain OK: h=1: IC -0.0151 (n=36, hit 42%); h=5: IC -0.0166 (n=36, hit 47%); h=20: IC +0.0671 (n=36, hit 86%)
+  P4 Oct04-Nov18 retrain job failing: h=1: IC -0.0119 (n=30, hit 53%); h=5: IC -0.0751 (n=27, hit 33%); h=20: IC -0.1002 (n=12, hit 42%)
+
+signal stability: share of today's BUY (SHORT) names that were also BUY (SHORT) yesterday:
+        days  mean_kept  median_kept
+signal                              
+BUY       90      0.791        0.828
+SHORT     90      0.764        0.793
+
+SIGN CHECK: for each opening market fill on day d, does the symbol's logged signal that morning match the side?
+  opening market fills with a same-day signal: 3767; side matches signal: 98.1%; mismatches: 72 -> {('HOLD', 'BUY'): 37, ('HOLD', 'SHORT'): 29, ('SHORT', 'BUY'): 6}
+  opening fills on days with no logged signal for that symbol: 14 (manual trades / reruns)
+
+====================================================================================================
+WHOLE-BOOK LIQUIDATION DAYS (>= 20 closing fills' worth of episodes in one day) and what they cost
+====================================================================================================
+             n  realized
+exit_date               
+2026-07-08  66    -250.0
+2026-07-09  28     562.0
+2026-07-15  21   -5340.0
+2026-07-27  21   -1109.0
+2026-07-29  22    3366.0
+2026-07-30  20     262.0
+2026-08-24  24    -821.0
+2026-09-08  47    2220.0
+2026-09-15  52   -1575.0
+2026-09-21  23      45.0
+2026-09-22  23   -1625.0
+2026-10-09  21    -341.0
+2026-10-12  37     206.0
+2026-10-15  45    -912.0
+2026-10-22  24   -2787.0
+2026-10-30  26   -2278.0
+2026-11-05  24    -356.0
+2026-11-16  28     812.0
+  2026-07-08: 66 episodes closed (realized $-250, exit exec cost $2); 44 of those names re-opened within 5 trading days, 23 on the same side
+  2026-07-09: 28 episodes closed (realized $562, exit exec cost $5); 12 of those names re-opened within 5 trading days, 11 on the same side
+  2026-07-15: 21 episodes closed (realized $-5,340, exit exec cost $369); 16 of those names re-opened within 5 trading days, 15 on the same side
+  2026-07-27: 21 episodes closed (realized $-1,109, exit exec cost $94); 15 of those names re-opened within 5 trading days, 12 on the same side
+  2026-07-29: 22 episodes closed (realized $3,366, exit exec cost $97); 17 of those names re-opened within 5 trading days, 16 on the same side
+  2026-07-30: 20 episodes closed (realized $262, exit exec cost $59); 15 of those names re-opened within 5 trading days, 12 on the same side
+  2026-08-24: 24 episodes closed (realized $-821, exit exec cost $36); 14 of those names re-opened within 5 trading days, 14 on the same side
+  2026-09-08: 47 episodes closed (realized $2,220, exit exec cost $400); 22 of those names re-opened within 5 trading days, 19 on the same side
+  2026-09-15: 52 episodes closed (realized $-1,575, exit exec cost $291); 49 of those names re-opened within 5 trading days, 48 on the same side
+  2026-09-21: 23 episodes closed (realized $45, exit exec cost $235); 19 of those names re-opened within 5 trading days, 18 on the same side
+  2026-09-22: 23 episodes closed (realized $-1,625, exit exec cost $160); 14 of those names re-opened within 5 trading days, 12 on the same side
+  2026-10-09: 21 episodes closed (realized $-341, exit exec cost $-19); 13 of those names re-opened within 5 trading days, 8 on the same side
+  2026-10-12: 37 episodes closed (realized $206, exit exec cost $281); 21 of those names re-opened within 5 trading days, 16 on the same side
+  2026-10-15: 45 episodes closed (realized $-912, exit exec cost $206); 43 of those names re-opened within 5 trading days, 40 on the same side
+  2026-10-22: 24 episodes closed (realized $-2,787, exit exec cost $84); 22 of those names re-opened within 5 trading days, 19 on the same side
+  2026-10-30: 26 episodes closed (realized $-2,278, exit exec cost $287); 20 of those names re-opened within 5 trading days, 14 on the same side
+  2026-11-05: 24 episodes closed (realized $-356, exit exec cost $116); 17 of those names re-opened within 5 trading days, 11 on the same side
+  2026-11-16: 28 episodes closed (realized $812, exit exec cost $36); 3 of those names re-opened within 5 trading days, 1 on the same side

@@ -16,3 +16,6 @@ logs/
 lightning_logs/
 frontend/node_modules/
 frontend/dist/
+
+# Post-mortem raw broker pulls (contain account identifiers)
+postmortem/data/
